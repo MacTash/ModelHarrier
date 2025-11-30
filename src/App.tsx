@@ -61,30 +61,30 @@ const REDTEAM_KEYWORDS = [
 ];
 
 // TYPES
-interface SecurityIssue {
+export interface SecurityIssue {
   level: "Critical" | "High" | "Medium" | "Low" | "Info";
   type: string;
   message: string;
 }
-interface ReportFiles {
+export interface ReportFiles {
   total: number;
   risky: string[];
   code: string[];
   safe: string[];
   unknown: string[];
 }
-interface ReportScores {
+export interface ReportScores {
   fileRisk: number;
   licenseRisk: number;
   vulnerabilityScore: number;
   overallScore: number;
 }
-interface RedTeamInsights {
+export interface RedTeamInsights {
   score: number;
   level: "Low" | "Medium" | "High";
   findings: string[];
 }
-interface Report {
+export interface Report {
   modelId: string;
   author: string;
   downloads: number;
@@ -488,7 +488,7 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({ report }) => {
 
           <div className="flex items-center gap-4">
             <button
-              onClick={() => exportReportAsPDF('scan-report')}
+              onClick={() => exportReportAsPDF(report)}
               className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
               title="Export report as PDF"
             >
