@@ -1,64 +1,137 @@
 import jsPDF from "jspdf";
-import { Report } from "../App"; // adjust if your Report interface lives elsewhere
+import autoTable from "jspdf-autotable";
+import { Report } from "../App"; // Ensure type import matches your structure
 
 export function exportReportAsPDF(report: Report) {
-    const doc = new jsPDF({
-        unit: "pt",
-        format: "a4"
-    });
+    const pdf = new jsPDF("p", "mm", "a4");
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const margin = 14;
 
-    let y = 40;
+    // Colors styled like UI
+    const brandBlue = "#3B82F6";
+    const textDark = "#111827";
+    const textGray = "#4B5563";
+    const red = "#DC2626";
+    const yellow = "#D97706";
+    const green = "#059669";
+    const purple = "#7C3AED";
 
-    const addLine = (text: string, size = 12, color = "#000") => {
-        doc.setFontSize(size);
-        doc.setTextColor(color);
-        doc.text(text, 40, y);
-        y += size + 6;
+    const severityColors: any = {
+        "Critical": red,
+        "High": yellow,
+        "Medium": yellow,
+        "Low": green,
+        "Info": brandBlue
     };
 
-    // Header
-    doc.setFont("helvetica", "bold");
-    addLine("AI Eye • Security Scan Report", 18);
+    const severityColor = severityColors[report.severity] || textDark;
 
-    doc.setFont("helvetica", "normal");
-    addLine(`Model: ${report.modelId}`, 12);
-    addLine(`Library: ${report.library}`);
-    addLine(`License: ${report.license}`);
-    addLine(`Downloads: ${report.downloads}`);
-    addLine(`Files Scanned: ${report.files.total}`);
-    addLine(`Risk Score: ${report.scores.overallScore}/10`);
-    addLine(`Severity Level: ${report.severity}`);
+    let y = margin;
 
-    y += 12;
-    doc.setFont("helvetica", "bold");
-    addLine("Security Findings:", 14, "#004085");
+    // Header brand
+    pdf.setFont("Helvetica", "bold");
+    pdf.setFontSize(20);
+    pdf.setTextColor(brandBlue);
+    pdf.text("AI Eye Security Scan Report", margin, y);
+    y += 10;
 
-    doc.setFont("helvetica", "normal");
-    report.securityIssues.slice(0, 15).forEach((issue) => {
-        if (y > 750) {
-            doc.addPage();
-            y = 40;
-        }
-        addLine(`[${issue.level}] ${issue.type}`, 12, "#b71c1c");
-        addLine(issue.message, 10);
-        y += 4;
+    // Basic metadata section
+    pdf.setFontSize(11);
+    pdf.setTextColor(textDark);
+    const metaLines = [
+        `Model: ${report.modelId}`,
+        `Library: ${report.library}`,
+        `License: ${report.license}`,
+        `Downloads: ${report.downloads}`,
+        `Files Scanned: ${report.files.total}`,
+        `Risk Score: ${report.scores.overallScore}/10`,
+        `Severity Level: ${report.severity}`
+    ];
+
+    metaLines.forEach(line => {
+        pdf.text(line, margin, y);
+        y += 6;
     });
 
-    y += 12;
-    doc.setFont("helvetica", "bold");
-    addLine("Red Team Insights:", 14, "#6f42c1");
+    // Section: Security Findings
+    y += 6;
+    pdf.setFontSize(14);
+    pdf.setTextColor(brandBlue);
+    pdf.text("Security Findings", margin, y);
+    y += 4;
+    pdf.setDrawColor(textGray);
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 6;
 
-    doc.setFont("helvetica", "normal");
-    addLine(`Risk Score: ${report.redTeamInsights?.score ?? 0}/100`, 12);
-    (report.redTeamInsights?.findings || []).slice(0, 6).forEach(f => addLine(`• ${f}`, 10));
+    if (report.securityIssues.length > 0) {
+        const rows = report.securityIssues.map(issue => [
+            `${issue.level}`,
+            `${issue.type}`,
+            `${issue.message}`
+        ]);
+
+        autoTable(pdf, {
+            startY: y,
+            head: [["Level", "Type", "Details"]],
+            body: rows,
+            theme: "grid",
+            styles: {
+                fontSize: 10,
+                textColor: textDark,
+            },
+            headStyles: {
+                fillColor: brandBlue,
+                textColor: "#FFFFFF",
+                fontStyle: "bold",
+            },
+            didParseCell: function (data) {
+                if (data.section === "body" && data.column.index === 0) {
+                    const severity = data.cell.raw as string;
+                    data.cell.styles.textColor = severityColors[severity] || textDark;
+                    data.cell.styles.fontStyle = "bold";
+                }
+            }
+        });
+
+        y = (pdf as any).lastAutoTable.finalY + 8;
+    } else {
+        pdf.setFontSize(11);
+        pdf.setTextColor(textGray);
+        pdf.text("No issues detected.", margin, y);
+        y += 10;
+    }
+
+    // Section: Red Team Insights
+    pdf.setFontSize(14);
+    pdf.setTextColor(purple);
+    pdf.text("Red Team Insights", margin, y);
+    y += 4;
+    pdf.setDrawColor(textGray);
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 6;
+
+    // Score + findings
+    pdf.setFontSize(11);
+    pdf.setTextColor(textDark);
+    pdf.text(`Risk Score: ${report.redTeamInsights?.score ?? 0}/100`, margin, y);
+    y += 6;
+
+    (report.redTeamInsights?.findings || []).forEach(f => {
+        pdf.setFontSize(10);
+        pdf.setTextColor(textGray);
+        pdf.text(`• ${f}`, margin, y);
+        y += 5;
+    });
 
     // Footer
-    doc.setFontSize(9);
-    doc.text(
-        `Generated on: ${new Date().toLocaleString()}`,
-        40,
-        820
+    const date = new Date().toLocaleString();
+    pdf.setFontSize(8);
+    pdf.setTextColor(textGray);
+    pdf.text(
+        `Generated by AI Eye • ${date}`,
+        margin,
+        pdf.internal.pageSize.getHeight() - 10
     );
 
-    doc.save(`${report.modelId}-security-report.pdf`);
+    pdf.save(`ai-eye-security-report.pdf`);
 }

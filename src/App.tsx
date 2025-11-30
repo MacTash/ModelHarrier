@@ -488,7 +488,9 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({ report }) => {
 
           <div className="flex items-center gap-4">
             <button
-              onClick={() => exportReportAsPDF(report)}
+              onClick={() => {
+                if (report) exportReportAsPDF(report);
+              }}
               className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
               title="Export report as PDF"
             >
