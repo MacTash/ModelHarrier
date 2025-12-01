@@ -673,9 +673,7 @@ export default function App() {
           prev && prev.redTeamInsights ? {
             ...prev,
             redTeamInsights: {
-              score: prev.redTeamInsights.score,
-              level: prev.redTeamInsights.level,
-              findings: prev.redTeamInsights.findings,
+              ...prev.redTeamInsights,
               behavioralScore: probeData.score,
               behavioralLevel: probeData.level,
               behaviorTests: probeData.results
