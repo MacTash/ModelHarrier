@@ -86,7 +86,7 @@ export interface RedTeamInsights {
 
   behavioralScore?: number     // new dynamic probe score 0-100
   behavioralLevel?: string     // Low Medium High Critical Unavailable
-  probes?: {
+  behaviorTests?: {
     id: string
     label: string
     success: boolean
@@ -425,7 +425,7 @@ const RedTeamInsightsCard: React.FC<RedTeamInsightsProps> = ({ insights }) => {
           Red Team Insights
         </h3>
         <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-          Static Analysis
+          Behavioral Security Test
         </span>
       </div>
 
@@ -433,8 +433,8 @@ const RedTeamInsightsCard: React.FC<RedTeamInsightsProps> = ({ insights }) => {
         <div className={`${getBgClass(insights.level)} rounded-lg p-4 mb-4 flex items-center justify-between border`}>
           <div>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Red Team Risk Score</p>
-            <p className={`text-3xl font-bold ${getColorClass(insights.level)}`}>
-              {insights.score}/100
+            <p className={`text-3xl font-bold ${getColorClass(insights.behavioralLevel || insights.level)}`}>
+              {(insights.behavioralScore !== undefined ? insights.behavioralScore : insights.score)}/100
             </p>
           </div>
           <div>
@@ -446,43 +446,19 @@ const RedTeamInsightsCard: React.FC<RedTeamInsightsProps> = ({ insights }) => {
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
             Findings
           </p>
-          {insights.findings.map((finding, idx) => (
+          {(insights.behaviorTests || []).map((result, idx) => (
             <div key={idx} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <span className="text-purple-500 mt-1">•</span>
-              <span>{finding}</span>
+              <span className={result.success ? "text-green-500 mt-1" : "text-red-500 mt-1"}>
+                {result.success ? "✓" : "✗"}
+              </span>
+              <span>{result.label} test {result.success ? "passed" : "failed"}</span>
             </div>
           ))}
         </div>
 
-        {insights.behavioralScore !== undefined && (
-          <div className="mt-6">
-            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-              Behavioral Probe Scan
-            </p>
-            <div className="flex justify-between items-center mt-2 mb-2 text-sm">
-              <span className="text-gray-700 dark:text-gray-300">
-                Score: <b>{insights.behavioralScore}</b>/100
-              </span>
-              <SeverityBadge level={(insights.behavioralLevel as "Critical" | "High" | "Medium" | "Low" | "Info") || "Low"} />
-            </div>
-
-            {insights.probes?.filter(p => !p.success).slice(0, 3).map((p, idx) => (
-              <div key={idx} className="text-xs text-red-500 dark:text-red-400 mt-1">
-                ✘ {p.label}
-              </div>
-            ))}
-
-            {insights.probes && insights.probes.every(p => p.success) && (
-              <div className="text-xs text-green-600 dark:text-green-400 mt-1">
-                ✔ Model refused all harmful requests
-              </div>
-            )}
-          </div>
-        )}
-
         <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
           <p className="text-xs text-gray-500 dark:text-gray-400 italic">
-            This analysis is based on model card text and tags. Active probing features coming soon.
+            Analysis combines static metadata scanning with active behavioral probing.
           </p>
         </div>
       </div>
@@ -684,17 +660,17 @@ export default function App() {
     setLoading(true);
     setError(null);
     setReport(null);
+
     try {
-      const staticResult = await performSecurityScan(id);
-      setReport(staticResult);
+      const baseReport = await performSecurityScan(id);
+      setReport(baseReport);
 
-      // call new behavioral probing API
-      try {
-        const probeRes = await fetch(`/api/probe?modelId=${encodeURIComponent(id)}`);
-        if (probeRes.ok) {
-          const probeData = await probeRes.json();
+      const probeResponse = await fetch(`/api/probe?modelId=${encodeURIComponent(id)}`);
+      if (probeResponse.ok) {
+        const probeData = await probeResponse.json();
 
-          setReport(prev => prev && prev.redTeamInsights ? {
+        setReport(prev =>
+          prev && prev.redTeamInsights ? {
             ...prev,
             redTeamInsights: {
               score: prev.redTeamInsights.score,
@@ -702,13 +678,12 @@ export default function App() {
               findings: prev.redTeamInsights.findings,
               behavioralScore: probeData.score,
               behavioralLevel: probeData.level,
-              probes: probeData.results
+              behaviorTests: probeData.results
             }
-          } : prev);
-        }
-      } catch {
-        console.warn("Behavioral probing unavailable");
+          } : prev
+        );
       }
+
     } catch (err: any) {
       setError(err.message || "Scan failed");
     } finally {
