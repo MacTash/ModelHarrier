@@ -92,6 +92,8 @@ export interface RedTeamInsights {
     success: boolean
     responsePreview: string
   }[]
+  narrative?: string[]
+  metrics?: any
 }
 export interface Report {
   modelId: string;
@@ -674,9 +676,11 @@ export default function App() {
             ...prev,
             redTeamInsights: {
               ...prev.redTeamInsights,
-              behavioralScore: probeData.score,
-              behavioralLevel: probeData.level,
-              behaviorTests: probeData.results
+              behavioralScore: probeData.behavioralScore,
+              behavioralLevel: probeData.behavioralLevel,
+              behaviorTests: probeData.results,
+              narrative: probeData.narrative,
+              metrics: probeData.metrics
             }
           } : prev
         );

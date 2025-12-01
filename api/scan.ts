@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import runProbe from "./probe";
 
 const HF_API_BASE = "https://huggingface.co/api/models";
 
@@ -11,30 +12,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
 
-        // Call Hugging Face model API
-        const response = await fetch(`${HF_API_BASE}/${encodeURIComponent(modelId)}`);
-
-        if (!response.ok) {
-            const status = response.status;
-            const message = status === 404 ? "Model not found on HuggingFace" : response.statusText;
+        const hfResp = await fetch(`${HF_API_BASE}/${encodeURIComponent(modelId)}`);
+        if (!hfResp.ok) {
+            const status = hfResp.status;
+            const message = status === 404 ? "Model not found on HuggingFace" : hfResp.statusText;
             res.status(status).json({ error: message });
             return;
         }
 
-        const data = await response.json();
+        const hfData = await hfResp.json();
 
-        // Normalize a few fields so frontend logic is safer
+        // Normalize HuggingFace model metadata
         const normalized = {
-            ...data,
-            cardData: data.cardData || {},
-            tags: Array.isArray(data.tags) ? data.tags : [],
-            siblings: Array.isArray(data.siblings) ? data.siblings : [],
+            ...hfData,
+            cardData: hfData.cardData || {},
+            tags: Array.isArray(hfData.tags) ? hfData.tags : [],
+            siblings: Array.isArray(hfData.siblings) ? hfData.siblings : [],
         };
 
-        // Important: return HF-style data, NOT a custom report object
-        res.status(200).json(normalized);
+        // Run behavioral Red Team probing
+        const redTeam = await runProbe({
+            method: "GET",
+            query: { modelId },
+        } as any, {
+            status: () => ({ json: (d: any) => d }),
+            json: (d: any) => d,
+        } as any);
+
+        res.status(200).json({
+            model: normalized,
+            redTeamInsights: redTeam,
+        });
     } catch (err: any) {
-        console.error("HF proxy error:", err);
-        res.status(500).json({ error: err.message || "Internal error" });
+        console.error("Scan error:", err);
+        res.status(500).json({ error: err.message || "Internal scan error" });
     }
 }
