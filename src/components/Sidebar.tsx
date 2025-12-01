@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, BarChart2, Clock, Settings, Info } from 'lucide-react';
+import { Home, BarChart2, Clock, Info } from 'lucide-react';
 
 interface SidebarProps {
     isOpen: boolean;
@@ -34,7 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
                     <button className="flex items-center gap-3 w-full p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
                         <BarChart2 className="w-5 h-5" />
-                        Threat Leaderboard
+                        Threat Intel Leaderboard
                     </button>
 
                     <button
@@ -45,10 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         Scan History
                     </button>
 
-                    <button className="flex items-center gap-3 w-full p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
-                        <Settings className="w-5 h-5" />
-                        Settings
-                    </button>
+
 
                     <button className="flex items-center gap-3 w-full p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
                         <Info className="w-5 h-5" />

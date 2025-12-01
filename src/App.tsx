@@ -83,17 +83,6 @@ export interface RedTeamInsights {
   score: number                // static (card text metadata)
   level: "Low" | "Medium" | "High"
   findings: string[]
-
-  behavioralScore?: number     // new dynamic probe score 0-100
-  behavioralLevel?: string     // Low Medium High Critical Unavailable
-  behaviorTests?: {
-    id: string
-    label: string
-    success: boolean
-    responsePreview: string
-  }[]
-  narrative?: string[]
-  metrics?: any
 }
 export interface Report {
   modelId: string;
@@ -394,79 +383,9 @@ const SecurityIssueRow: React.FC<SecurityIssueRowProps> = ({ issue }) => {
   );
 };
 
-interface RedTeamInsightsProps {
-  insights?: RedTeamInsights;
-}
 
-const RedTeamInsightsCard: React.FC<RedTeamInsightsProps> = ({ insights }) => {
-  if (!insights) return null;
 
-  const getColorClass = (level: string) => {
-    switch (level) {
-      case 'High': return 'text-red-600 dark:text-red-400';
-      case 'Medium': return 'text-yellow-600 dark:text-yellow-400';
-      case 'Low': return 'text-green-600 dark:text-green-400';
-      default: return 'text-gray-600';
-    }
-  };
 
-  const getBgClass = (level: string) => {
-    switch (level) {
-      case 'High': return 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
-      case 'Medium': return 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800';
-      case 'Low': return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
-      default: return 'bg-gray-50';
-    }
-  };
-
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
-      <div className="p-5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-        <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
-          <AlertOctagon className="w-5 h-5 text-purple-500" />
-          Red Team Insights
-        </h3>
-        <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-          Behavioral Security Test
-        </span>
-      </div>
-
-      <div className="p-5">
-        <div className={`${getBgClass(insights.level)} rounded-lg p-4 mb-4 flex items-center justify-between border`}>
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Red Team Risk Score</p>
-            <p className={`text-3xl font-bold ${getColorClass(insights.behavioralLevel || insights.level)}`}>
-              {(insights.behavioralScore !== undefined ? insights.behavioralScore : insights.score)}/100
-            </p>
-          </div>
-          <div>
-            <SeverityBadge level={insights.level} />
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-            Findings
-          </p>
-          {(insights.behaviorTests || []).map((result, idx) => (
-            <div key={idx} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <span className={result.success ? "text-green-500 mt-1" : "text-red-500 mt-1"}>
-                {result.success ? "✓" : "✗"}
-              </span>
-              <span>{result.label} test {result.success ? "passed" : "failed"}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <p className="text-xs text-gray-500 dark:text-gray-400 italic">
-            Analysis combines static metadata scanning with active behavioral probing.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 interface ReportDashboardProps {
   report: Report | null;
@@ -556,9 +475,7 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({ report }) => {
       </div>
 
       {/* Red Team Insights Section */}
-      {report.redTeamInsights && (
-        <RedTeamInsightsCard insights={report.redTeamInsights} />
-      )}
+
 
       {/* Main Content Area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -667,24 +584,7 @@ export default function App() {
       const baseReport = await performSecurityScan(id);
       setReport(baseReport);
 
-      const probeResponse = await fetch(`/api/probe?modelId=${encodeURIComponent(id)}`);
-      if (probeResponse.ok) {
-        const probeData = await probeResponse.json();
 
-        setReport(prev =>
-          prev && prev.redTeamInsights ? {
-            ...prev,
-            redTeamInsights: {
-              ...prev.redTeamInsights,
-              behavioralScore: probeData.behavioralScore,
-              behavioralLevel: probeData.behavioralLevel,
-              behaviorTests: probeData.results,
-              narrative: probeData.narrative,
-              metrics: probeData.metrics
-            }
-          } : prev
-        );
-      }
 
     } catch (err: any) {
       setError(err.message || "Scan failed");

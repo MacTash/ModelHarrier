@@ -13,7 +13,7 @@ export function exportReportAsPDF(report: Report) {
     const red = "#DC2626";
     const yellow = "#D97706";
     const green = "#059669";
-    const purple = "#7C3AED";
+
 
     const severityColors: Record<string, string> = {
         Critical: red,
@@ -97,29 +97,7 @@ export function exportReportAsPDF(report: Report) {
         y += 10;
     }
 
-    pdf.setFontSize(14);
-    pdf.setTextColor(purple);
-    pdf.text("Red Team Insights", margin, y);
-    y += 4;
-    pdf.setDrawColor(textGray);
-    pdf.line(margin, y, pageWidth - margin, y);
-    y += 6;
 
-    pdf.setFontSize(11);
-    pdf.setTextColor(textDark);
-    pdf.text(
-        `Risk Score: ${report.redTeamInsights?.score ?? 0}/100`,
-        margin,
-        y
-    );
-    y += 6;
-
-    report.redTeamInsights?.findings?.forEach((f) => {
-        pdf.setFontSize(10);
-        pdf.setTextColor(textGray);
-        pdf.text(`• ${f}`, margin, y);
-        y += 5;
-    });
 
     const timestamp = new Date().toLocaleString();
     pdf.setFontSize(8);
