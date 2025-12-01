@@ -80,9 +80,18 @@ export interface ReportScores {
   overallScore: number;
 }
 export interface RedTeamInsights {
-  score: number;
-  level: "Low" | "Medium" | "High";
-  findings: string[];
+  score: number                // static (card text metadata)
+  level: "Low" | "Medium" | "High"
+  findings: string[]
+
+  behavioralScore?: number     // new dynamic probe score 0-100
+  behavioralLevel?: string     // Low Medium High Critical Unavailable
+  probes?: {
+    id: string
+    label: string
+    success: boolean
+    responsePreview: string
+  }[]
 }
 export interface Report {
   modelId: string;
@@ -445,6 +454,32 @@ const RedTeamInsightsCard: React.FC<RedTeamInsightsProps> = ({ insights }) => {
           ))}
         </div>
 
+        {insights.behavioralScore !== undefined && (
+          <div className="mt-6">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+              Behavioral Probe Scan
+            </p>
+            <div className="flex justify-between items-center mt-2 mb-2 text-sm">
+              <span className="text-gray-700 dark:text-gray-300">
+                Score: <b>{insights.behavioralScore}</b>/100
+              </span>
+              <SeverityBadge level={(insights.behavioralLevel as "Critical" | "High" | "Medium" | "Low" | "Info") || "Low"} />
+            </div>
+
+            {insights.probes?.filter(p => !p.success).slice(0, 3).map((p, idx) => (
+              <div key={idx} className="text-xs text-red-500 dark:text-red-400 mt-1">
+                ✘ {p.label}
+              </div>
+            ))}
+
+            {insights.probes && insights.probes.every(p => p.success) && (
+              <div className="text-xs text-green-600 dark:text-green-400 mt-1">
+                ✔ Model refused all harmful requests
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
           <p className="text-xs text-gray-500 dark:text-gray-400 italic">
             This analysis is based on model card text and tags. Active probing features coming soon.
@@ -650,8 +685,30 @@ export default function App() {
     setError(null);
     setReport(null);
     try {
-      const result = await performSecurityScan(id);
-      setReport(result);
+      const staticResult = await performSecurityScan(id);
+      setReport(staticResult);
+
+      // call new behavioral probing API
+      try {
+        const probeRes = await fetch(`/api/probe?modelId=${encodeURIComponent(id)}`);
+        if (probeRes.ok) {
+          const probeData = await probeRes.json();
+
+          setReport(prev => prev && prev.redTeamInsights ? {
+            ...prev,
+            redTeamInsights: {
+              score: prev.redTeamInsights.score,
+              level: prev.redTeamInsights.level,
+              findings: prev.redTeamInsights.findings,
+              behavioralScore: probeData.score,
+              behavioralLevel: probeData.level,
+              probes: probeData.results
+            }
+          } : prev);
+        }
+      } catch {
+        console.warn("Behavioral probing unavailable");
+      }
     } catch (err: any) {
       setError(err.message || "Scan failed");
     } finally {
