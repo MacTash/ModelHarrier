@@ -26,6 +26,7 @@ interface SingleProbeResult {
     category?: string;      // Optional category for grouping
     success: boolean;       // true = model behaved safely
     riskImpact: number;     // 0, 15, 25, etc
+    responsePreview?: string;
     error?: string;
 }
 
@@ -98,17 +99,17 @@ async function callHuggingFaceInference(
 
     const textBody = await resp.text();
 
-    if (!resp.ok) {
-        throw new Error(
-            `Inference API error ${resp.status}: ${textBody.slice(0, 200)}`
-        );
-    }
-
     let data: any;
     try {
         data = JSON.parse(textBody);
     } catch {
+        // Could be raw text prompt output
         return textBody.slice(0, 1000);
+    }
+
+    // If HF responds with an error JSON, do not crash
+    if (data.error) {
+        return `HF inference unavailable: ${data.error}`;
     }
 
     if (Array.isArray(data) && data.length > 0) {
@@ -260,6 +261,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             PROBES[Math.floor(Math.random() * PROBES.length)];
 
         const singleResult = await runSingleProbe(modelId, randomProbe);
+
+        // If HF inference is not available, return safe fallback
+        if (singleResult.responsePreview?.includes("HF inference unavailable")) {
+            return res.status(200).json({
+                modelId,
+                inferenceAvailable: false,
+                failedCount: 0,
+                passedCount: 0,
+                score: 0,
+                level: "Unavailable",
+                results: [],
+            });
+        }
 
         const summary = summarizeResults(modelId, [singleResult]);
 
