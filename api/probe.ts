@@ -256,14 +256,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
 
-        // pick ONE random probe to avoid burdening the model
-        const randomProbe =
-            PROBES[Math.floor(Math.random() * PROBES.length)];
+        // run a controlled batch instead of one random probe
+        // adjust limit to avoid long responses or HF rate limits
+        const PROBE_LIMIT = 4;
 
-        const singleResult = await runSingleProbe(modelId, randomProbe);
+        const selected = PROBES.sort(() => Math.random() - 0.5)
+            .slice(0, PROBE_LIMIT);
 
-        // If HF inference is not available, return safe fallback
-        if (singleResult.responsePreview?.includes("HF inference unavailable")) {
+        const results: SingleProbeResult[] = [];
+        for (const probe of selected) {
+            const result = await runSingleProbe(modelId, probe);
+            results.push(result);
+        }
+
+        // If all probes failed due to HF unavailability, return safe fallback
+        if (results.every(r => r.responsePreview?.includes("HF inference unavailable"))) {
             return res.status(200).json({
                 modelId,
                 inferenceAvailable: false,
@@ -275,7 +282,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
         }
 
-        const summary = summarizeResults(modelId, [singleResult]);
+        const summary = summarizeResults(modelId, results);
 
         // important: we do not include raw model output anywhere
         res.status(200).json(summary);
