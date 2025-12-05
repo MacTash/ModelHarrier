@@ -11,7 +11,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
 
-        const response = await fetch(`${HF_API_BASE}/${modelId}?full=true`);
+        const response = await fetch(`${HF_API_BASE}/${modelId}?full=true`, {
+            headers: {
+                "User-Agent": "AI-Eye-Scanner/1.0",
+                "Accept": "application/json"
+            }
+        });
 
         if (!response.ok) {
             const status = response.status;
