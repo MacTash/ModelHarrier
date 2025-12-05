@@ -3,15 +3,27 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 const HF_API_BASE = "https://huggingface.co/api/models";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET');
 
     try {
-        const modelId = req.query.modelId;
+        // Try multiple ways to get modelId
+        let modelId = req.query.modelId;
+
+        // If query parsing fails, try parsing URL manually
+        if (!modelId && req.url) {
+            const url = new URL(req.url, `https://${req.headers.host}`);
+            modelId = url.searchParams.get('modelId') || undefined;
+        }
 
         if (!modelId || typeof modelId !== "string") {
-            return res.status(400).json({ error: "modelId query is required" });
+            return res.status(400).json({
+                error: "modelId query is required",
+                debug: {
+                    query: req.query,
+                    url: req.url,
+                    method: req.method
+                }
+            });
         }
 
         const url = `${HF_API_BASE}/${encodeURIComponent(modelId)}?full=true`;
@@ -22,11 +34,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         if (!response.ok) {
             const status = response.status;
-            let message = "Unknown error";
+            let message = response.statusText || `HTTP ${status}`;
 
             if (status === 404) message = "Model not found on HuggingFace";
             else if (status === 429) message = "Rate limited. Try again.";
-            else message = response.statusText || `HTTP ${status}`;
 
             return res.status(status).json({ error: message });
         }
@@ -45,7 +56,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             lastModified: data.lastModified || data.createdAt || new Date().toISOString(),
         };
 
-        res.setHeader('Cache-Control', 's-maxage=60');
         return res.status(200).json(normalized);
 
     } catch (err: any) {
