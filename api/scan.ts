@@ -7,12 +7,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
         // Try multiple ways to get modelId
-        let modelId = req.query.modelId;
+        let modelId: string | string[] | undefined = req.query.modelId;
 
         // If query parsing fails, try parsing URL manually
         if (!modelId && req.url) {
             const url = new URL(req.url, `https://${req.headers.host}`);
-            modelId = url.searchParams.get('modelId') || undefined;
+            const parsed = url.searchParams.get('modelId');
+            if (parsed) modelId = parsed;
         }
 
         if (!modelId || typeof modelId !== "string") {
