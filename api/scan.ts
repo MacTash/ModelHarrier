@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import fetch from "node-fetch";
 
 const HF_API_BASE = "https://huggingface.co/api/models";
 
@@ -26,23 +27,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
 
-        const response = await fetch(
-            `${HF_API_BASE}/${encodeURIComponent(modelId)}?full=true`,
-            {
-                headers: {
-                    "Accept": "application/json",
-                },
-            }
-        );
+        const url = `${HF_API_BASE}/${encodeURIComponent(modelId)}?full=true`;
+        const response = await fetch(url, {
+            headers: {
+                "Accept": "application/json",
+            },
+        });
 
         if (!response.ok) {
             const status = response.status;
-            let message = response.statusText;
+            let message = response.statusText || "Unknown error";
 
             if (status === 404) {
-                message = "Model not found on HuggingFace. Check the model ID or try again in a few minutes for newly published models.";
+                message = "Model not found on HuggingFace. Check the model ID.";
             } else if (status === 429) {
-                message = "Rate limited by HuggingFace. Please try again in a moment.";
+                message = "Rate limited by HuggingFace. Please try again.";
             }
 
             res.status(status).json({ error: message });
@@ -67,9 +66,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res.status(200).json(normalized);
     } catch (err) {
         console.error("HF proxy error:", err);
-        const message = err instanceof Error ? err.message : "Internal error fetching model data";
+        const message = err instanceof Error ? err.message : "Internal error";
         res.status(500).json({ error: message });
     }
 }
+
 
 
