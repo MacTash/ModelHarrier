@@ -115,8 +115,17 @@ const performSecurityScan = async (modelId: string): Promise<Report> => {
     );
 
     if (!response.ok) {
-      if (response.status === 404) throw new Error("Model not found");
-      throw new Error(`API Error: ${response.statusText}`);
+      // Try to get error message from response body
+      let errorMessage = `API Error: ${response.statusText || response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData.error) {
+          errorMessage = errorData.error;
+        }
+      } catch {
+        // Response wasn't JSON, use default message
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
@@ -692,9 +701,9 @@ export default function App() {
                     </div>
                     <div className="ml-auto">
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${report.staticAnalysis.staticRiskLevel === 'critical' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                          report.staticAnalysis.staticRiskLevel === 'high' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
-                            report.staticAnalysis.staticRiskLevel === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                              'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        report.staticAnalysis.staticRiskLevel === 'high' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                          report.staticAnalysis.staticRiskLevel === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                            'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                         }`}>
                         {report.staticAnalysis.staticRiskLevel.toUpperCase()} ({report.staticAnalysis.staticRiskScore}/100)
                       </span>
