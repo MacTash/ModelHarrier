@@ -2,6 +2,21 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const HF_API_BASE = "https://huggingface.co/api/models";
 
+interface HFModelResponse {
+    id?: string;
+    modelId?: string;
+    author?: string;
+    cardData?: Record<string, unknown>;
+    tags?: string[];
+    siblings?: Array<{ rfilename: string }>;
+    downloads?: number;
+    likes?: number;
+    library_name?: string;
+    pipeline_tag?: string;
+    lastModified?: string;
+    createdAt?: string;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
         const { modelId } = req.query;
@@ -11,15 +26,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
 
-        // Use full=true to get complete file listings and metadata
-        // Add cache-busting headers to ensure fresh data for new models
         const response = await fetch(
             `${HF_API_BASE}/${encodeURIComponent(modelId)}?full=true`,
             {
                 headers: {
                     "Accept": "application/json",
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Pragma": "no-cache",
                 },
             }
         );
@@ -38,11 +49,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
 
-        const data = await response.json();
+        const data = (await response.json()) as HFModelResponse;
 
-        // Normalize response to ensure consistent structure
         const normalized = {
-            ...data,
             modelId: data.modelId || data.id || modelId,
             author: data.author || modelId.split('/')[0] || 'Unknown',
             cardData: data.cardData || {},
@@ -54,12 +63,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             lastModified: data.lastModified || data.createdAt || new Date().toISOString(),
         };
 
-        // Set cache headers to allow brief caching but revalidate
         res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
         res.status(200).json(normalized);
-    } catch (err: any) {
+    } catch (err) {
         console.error("HF proxy error:", err);
-        res.status(500).json({ error: err.message || "Internal error fetching model data" });
+        const message = err instanceof Error ? err.message : "Internal error fetching model data";
+        res.status(500).json({ error: message });
     }
 }
+
 
