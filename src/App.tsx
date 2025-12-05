@@ -16,9 +16,14 @@ import {
   Info,
   Terminal,
   Menu,
+  Target,
+  Cpu,
 } from "lucide-react";
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, SidebarTab } from './components/Sidebar';
 import { exportReportAsPDF } from './utils/exportReport';
+import { RedTeamPlaybook, ProbeResult } from './components/RedTeamPlaybook';
+import { performStaticAnalysis, StaticAnalysisResult } from './utils/staticAnalysis';
+import { detectSpaces, getKnownSpace } from './utils/spacesDetector';
 
 // CONSTANTS
 const RISKY_EXTENSIONS = [
@@ -98,6 +103,8 @@ export interface Report {
   scores: ReportScores;
   severity: "Critical" | "High" | "Medium" | "Low";
   redTeamInsights?: RedTeamInsights;
+  staticAnalysis?: StaticAnalysisResult;
+  probeResults?: ProbeResult[];
 }
 
 // SCAN LOGIC
@@ -567,6 +574,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<Report | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<SidebarTab>('dashboard');
+  const [probeResults, setProbeResults] = useState<ProbeResult[]>([]);
 
   useEffect(() => {
     if (window.matchMedia("(prefers-color-scheme: dark)").matches)
@@ -579,12 +588,47 @@ export default function App() {
     setLoading(true);
     setError(null);
     setReport(null);
+    setActiveTab('dashboard');
+    setProbeResults([]);
 
     try {
       const baseReport = await performSecurityScan(id);
+
+      // Perform static analysis
+      const staticResult = performStaticAnalysis(
+        id,
+        {}, // cardData would come from API
+        [], // tags would come from API
+        undefined,
+        undefined
+      );
+
+      // Check for Spaces
+      let spacesUrl = getKnownSpace(id);
+      if (!spacesUrl) {
+        try {
+          const spacesInfo = await detectSpaces(id);
+          spacesUrl = spacesInfo.spacesUrl;
+        } catch {
+          // Spaces detection failed, continue without
+        }
+      }
+      staticResult.spacesUrl = spacesUrl;
+      staticResult.hasSpaces = !!spacesUrl;
+
+      // Add static analysis findings to security issues
+      for (const finding of staticResult.findings) {
+        baseReport.securityIssues.push({
+          level: staticResult.staticRiskLevel === 'critical' ? 'Critical' :
+            staticResult.staticRiskLevel === 'high' ? 'High' :
+              staticResult.staticRiskLevel === 'medium' ? 'Medium' : 'Low',
+          type: 'Static Analysis',
+          message: finding
+        });
+      }
+
+      baseReport.staticAnalysis = staticResult;
       setReport(baseReport);
-
-
 
     } catch (err: any) {
       setError(err.message || "Scan failed");
@@ -593,33 +637,199 @@ export default function App() {
     }
   };
 
+  const handleProbeResultsChange = (results: ProbeResult[]) => {
+    setProbeResults(results);
+    if (report) {
+      setReport({ ...report, probeResults: results });
+    }
+  };
+
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        hasScannedModel={!!report}
+      />
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
 
         <Header isDark={isDark} toggleTheme={toggleTheme} onMenuClick={() => setSidebarOpen(true)} />
 
         <main>
-          <div className="text-center mb-10">
-            <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 dark:text-white mb-4">
-              Secure your AI Supply Chain
-            </h2>
-            <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto mb-1">
-              Scan HuggingFace models for malicious code, unsafe serialization (pickles), and license compliance issues before you deploy.
-            </p>
-          </div>
+          {/* Dashboard / Home Tab */}
+          {activeTab === 'dashboard' && (
+            <>
+              <div className="text-center mb-10">
+                <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 dark:text-white mb-4">
+                  Secure your AI Supply Chain
+                </h2>
+                <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto mb-1">
+                  Scan HuggingFace models for malicious code, unsafe serialization (pickles), and license compliance issues before you deploy.
+                </p>
+              </div>
 
-          <SearchBar onScan={handleScan} isLoading={loading} />
+              <SearchBar onScan={handleScan} isLoading={loading} />
 
-          <p className="text-center text-sm text-gray-500 dark:text-gray-400 mb-8">
-            © 2025 AI Eye.
-          </p>
+              <p className="text-center text-sm text-gray-500 dark:text-gray-400 mb-8">
+                © 2025 AI Eye.
+              </p>
 
-          {error && <div className="text-red-500 text-center">{error}</div>}
-          <ReportDashboard report={report} />
+              {error && <div className="text-red-500 text-center">{error}</div>}
+              <ReportDashboard report={report} />
+
+              {/* Static Analysis Card - shown when report has static analysis */}
+              {report?.staticAnalysis && (
+                <div className="mt-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="bg-purple-100 dark:bg-purple-900/30 p-2 rounded-lg">
+                      <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-gray-900 dark:text-white">Deep Static Analysis</h3>
+                      <p className="text-xs text-gray-500">Model card, config, and training data inspection</p>
+                    </div>
+                    <div className="ml-auto">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${report.staticAnalysis.staticRiskLevel === 'critical' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                          report.staticAnalysis.staticRiskLevel === 'high' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                            report.staticAnalysis.staticRiskLevel === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                              'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        }`}>
+                        {report.staticAnalysis.staticRiskLevel.toUpperCase()} ({report.staticAnalysis.staticRiskScore}/100)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400 block">Base Model</span>
+                      <span className="text-gray-900 dark:text-white font-medium">
+                        {report.staticAnalysis.baseModel || 'Unknown'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400 block">Architecture</span>
+                      <span className="text-gray-900 dark:text-white font-medium">
+                        {report.staticAnalysis.architectureType || 'Unknown'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400 block">Unsafe Keywords</span>
+                      <span className={`font-medium ${report.staticAnalysis.unsafeKeywords.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {report.staticAnalysis.unsafeKeywords.length} detected
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400 block">Free Demo</span>
+                      {report.staticAnalysis.hasSpaces ? (
+                        <a
+                          href={report.staticAnalysis.spacesUrl || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 dark:text-blue-400 font-medium hover:underline"
+                        >
+                          Available ↗
+                        </a>
+                      ) : (
+                        <span className="text-gray-500">Not found</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {report.staticAnalysis.unsafeKeywords.length > 0 && (
+                    <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                      <span className="text-xs text-red-600 dark:text-red-400 font-bold">Detected Patterns: </span>
+                      <span className="text-xs text-red-600 dark:text-red-400">
+                        {report.staticAnalysis.unsafeKeywords.join(', ')}
+                      </span>
+                    </div>
+                  )}
+
+                  {report.staticAnalysis.hasSpaces && (
+                    <div className="mt-4 flex items-center gap-2">
+                      <Target className="w-4 h-4 text-purple-500" />
+                      <button
+                        onClick={() => setActiveTab('redteam')}
+                        className="text-sm text-purple-600 dark:text-purple-400 font-medium hover:underline"
+                      >
+                        Open Red Team Playbook to test this model →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Red Team Tab */}
+          {activeTab === 'redteam' && report && (
+            <RedTeamPlaybook
+              modelId={report.modelId}
+              spacesUrl={report.staticAnalysis?.spacesUrl || null}
+              onResultsChange={handleProbeResultsChange}
+              initialResults={probeResults}
+            />
+          )}
+
+          {/* About Tab */}
+          {activeTab === 'about' && (
+            <div className="max-w-2xl mx-auto">
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="bg-blue-600 p-3 rounded-lg">
+                    <Shield className="w-8 h-8 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">AI Eye</h2>
+                    <p className="text-gray-500 dark:text-gray-400">AI Model Security Scanner v1.0</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-gray-600 dark:text-gray-300">
+                  <p>
+                    AI Eye helps you secure your AI supply chain by scanning HuggingFace models for:
+                  </p>
+                  <ul className="list-disc list-inside space-y-2 ml-4">
+                    <li>Unsafe serialization formats (pickle, joblib, dill)</li>
+                    <li>Executable files and code that could run on load</li>
+                    <li>License compliance and legal issues</li>
+                    <li>Known vulnerable or uncensored base models</li>
+                    <li>Risky training data sources</li>
+                  </ul>
+
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-6">
+                    <h3 className="font-bold text-gray-900 dark:text-white mb-2">Red Team Playbook</h3>
+                    <p className="text-sm">
+                      After scanning a model, use the Red Team Playbook to manually test for jailbreaks,
+                      prompt injection, and other AI safety vulnerabilities. Copy probes and test them
+                      against the model's demo (if available) or your own deployment.
+                    </p>
+                  </div>
+
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <p className="text-sm text-gray-500">
+                      Built for AI security research and red teaming. © 2025
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Leaderboard Tab (Placeholder) */}
+          {activeTab === 'leaderboard' && (
+            <div className="text-center py-20">
+              <div className="bg-gray-100 dark:bg-gray-800 inline-block p-4 rounded-full mb-4">
+                <Target className="w-12 h-12 text-gray-400" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Threat Intel Leaderboard</h2>
+              <p className="text-gray-500 dark:text-gray-400">Coming soon - Track the riskiest models on HuggingFace</p>
+            </div>
+          )}
         </main>
       </div>
     </div>
   );
 }
+
