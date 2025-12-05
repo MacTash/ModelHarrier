@@ -1,75 +1,55 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import fetch from "node-fetch";
 
 const HF_API_BASE = "https://huggingface.co/api/models";
 
-interface HFModelResponse {
-    id?: string;
-    modelId?: string;
-    author?: string;
-    cardData?: Record<string, unknown>;
-    tags?: string[];
-    siblings?: Array<{ rfilename: string }>;
-    downloads?: number;
-    likes?: number;
-    library_name?: string;
-    pipeline_tag?: string;
-    lastModified?: string;
-    createdAt?: string;
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+    // Set CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+
     try {
-        const { modelId } = req.query;
+        const modelId = req.query.modelId;
 
         if (!modelId || typeof modelId !== "string") {
-            res.status(400).json({ error: "modelId query is required" });
-            return;
+            return res.status(400).json({ error: "modelId query is required" });
         }
 
         const url = `${HF_API_BASE}/${encodeURIComponent(modelId)}?full=true`;
+
         const response = await fetch(url, {
-            headers: {
-                "Accept": "application/json",
-            },
+            headers: { "Accept": "application/json" },
         });
 
         if (!response.ok) {
             const status = response.status;
-            let message = response.statusText || "Unknown error";
+            let message = "Unknown error";
 
-            if (status === 404) {
-                message = "Model not found on HuggingFace. Check the model ID.";
-            } else if (status === 429) {
-                message = "Rate limited by HuggingFace. Please try again.";
-            }
+            if (status === 404) message = "Model not found on HuggingFace";
+            else if (status === 429) message = "Rate limited. Try again.";
+            else message = response.statusText || `HTTP ${status}`;
 
-            res.status(status).json({ error: message });
-            return;
+            return res.status(status).json({ error: message });
         }
 
-        const data = (await response.json()) as HFModelResponse;
+        const data: any = await response.json();
 
         const normalized = {
             modelId: data.modelId || data.id || modelId,
             author: data.author || modelId.split('/')[0] || 'Unknown',
             cardData: data.cardData || {},
-            tags: Array.isArray(data.tags) ? data.tags : [],
-            siblings: Array.isArray(data.siblings) ? data.siblings : [],
+            tags: data.tags || [],
+            siblings: data.siblings || [],
             downloads: data.downloads || 0,
             likes: data.likes || 0,
             library_name: data.library_name || data.pipeline_tag || 'Unknown',
             lastModified: data.lastModified || data.createdAt || new Date().toISOString(),
         };
 
-        res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
-        res.status(200).json(normalized);
-    } catch (err) {
-        console.error("HF proxy error:", err);
-        const message = err instanceof Error ? err.message : "Internal error";
-        res.status(500).json({ error: message });
+        res.setHeader('Cache-Control', 's-maxage=60');
+        return res.status(200).json(normalized);
+
+    } catch (err: any) {
+        console.error("API Error:", err);
+        return res.status(500).json({ error: err?.message || "Internal server error" });
     }
 }
-
-
-
