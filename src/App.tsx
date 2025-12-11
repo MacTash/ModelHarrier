@@ -24,6 +24,8 @@ import { exportReportAsPDF } from './utils/exportReport';
 import { RedTeamPlaybook, ProbeResult } from './components/RedTeamPlaybook';
 import { performStaticAnalysis, StaticAnalysisResult } from './utils/staticAnalysis';
 import { detectSpaces, getKnownSpace } from './utils/spacesDetector';
+import { VerificationDashboard } from './components/VerificationDashboard';
+import { ReviewerMode, VerificationResult } from './components/ReviewerMode';
 
 // CONSTANTS
 const RISKY_EXTENSIONS = [
@@ -585,6 +587,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SidebarTab>('dashboard');
   const [probeResults, setProbeResults] = useState<ProbeResult[]>([]);
+  const [verificationResult, _setVerificationResult] = useState<VerificationResult | null>(null);
 
   useEffect(() => {
     if (window.matchMedia("(prefers-color-scheme: dark)").matches)
@@ -835,6 +838,19 @@ export default function App() {
               <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Threat Intel Leaderboard</h2>
               <p className="text-gray-500 dark:text-gray-400">Coming soon - Track the riskiest models on HuggingFace</p>
             </div>
+          )}
+
+          {/* Verification Dashboard Tab */}
+          {activeTab === 'verification' && (
+            <VerificationDashboard />
+          )}
+
+          {/* Reviewer Mode Tab */}
+          {activeTab === 'reviewer' && (
+            <ReviewerMode
+              result={verificationResult}
+              onClose={() => setActiveTab('dashboard')}
+            />
           )}
         </main>
       </div>

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Home, BarChart2, Clock, Info, Target, X } from 'lucide-react';
+import { Home, BarChart2, Clock, Info, Target, X, Activity, Eye } from 'lucide-react';
 
-export type SidebarTab = 'dashboard' | 'leaderboard' | 'redteam' | 'history' | 'about';
+export type SidebarTab = 'dashboard' | 'leaderboard' | 'redteam' | 'verification' | 'reviewer' | 'history' | 'about';
 
 interface SidebarProps {
     isOpen: boolean;
@@ -78,6 +78,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         )}
                     </button>
 
+                    {/* New Verification Dashboard */}
+                    <button
+                        onClick={() => handleTabClick('verification')}
+                        className={getTabClasses('verification')}
+                    >
+                        <Activity className="w-5 h-5" />
+                        Verification
+                        <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded ml-auto">
+                            New
+                        </span>
+                    </button>
+
+                    {/* New Reviewer Mode */}
+                    <button
+                        onClick={() => hasScannedModel && handleTabClick('reviewer')}
+                        className={getTabClasses('reviewer', !hasScannedModel)}
+                        title={hasScannedModel ? 'Review scan details' : 'Scan a model first'}
+                    >
+                        <Eye className="w-5 h-5" />
+                        Reviewer Mode
+                        {!hasScannedModel && (
+                            <span className="text-xs bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded ml-auto">
+                                Scan first
+                            </span>
+                        )}
+                    </button>
+
                     <button
                         onClick={() => handleTabClick('leaderboard')}
                         className={getTabClasses('leaderboard')}
@@ -109,4 +136,3 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
     );
 };
-
