@@ -13,7 +13,7 @@ from typing import Optional
 from enum import Enum
 
 from config import BENIGN_CORPUS, MALICIOUS_CORPUS, ADVERSARIAL_CORPUS, DATA_DIR
-from verification_engine import engine, TriangulationResult, RiskLevel
+from verification_engine import engine, RiskLevel
 
 
 class CorpusType(Enum):
@@ -340,7 +340,6 @@ def create_malicious_samples():
     # This creates a pickle that would call os.system
     class MaliciousPickle:
         def __reduce__(self):
-            import os
             return (os.system, ('echo pwned',))
     
     # os.system payload

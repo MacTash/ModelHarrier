@@ -9,9 +9,7 @@ Stores scan results and computes:
 """
 import json
 import sqlite3
-import hashlib
-from dataclasses import dataclass, asdict
-from datetime import datetime
+from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
 import numpy as np

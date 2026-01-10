@@ -4,7 +4,6 @@ Risk Score Calibration
 Implements calibration curves and risk bucketing to validate
 that risk scores correspond to actual malicious likelihood.
 """
-import json
 from typing import Optional
 from dataclasses import dataclass
 import numpy as np

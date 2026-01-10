@@ -13,7 +13,7 @@ import os
 # Add backend to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
-from verification_engine import engine, RiskLevel
+from verification_engine import engine
 from telemetry import opcode_counts_to_vector
 
 
