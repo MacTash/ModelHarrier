@@ -72,6 +72,20 @@ class handler(BaseHTTPRequestHandler):
                     ],
                     'disassembly': result.pickletools_result.raw_disassembly[:2000]  # Truncate for response size
                 },
+                'picklescan': {
+                    'available': result.picklescan_result.available,
+                    'vulnerable': result.picklescan_result.vulnerable,
+                    'issues': result.picklescan_result.issues[:10],
+                    'scan_error': result.picklescan_result.scan_error,
+                },
+                'tensortrap': {
+                    'available': result.tensortrap_result.available,
+                    'is_suspicious': result.tensortrap_result.is_suspicious,
+                    'findings': result.tensortrap_result.findings[:10],
+                    'risk_score': result.tensortrap_result.risk_score,
+                    'model_type': result.tensortrap_result.model_type,
+                    'scan_error': result.tensortrap_result.scan_error,
+                },
                 'fickling': {
                     'available': result.fickling_result.available,
                     'is_safe': result.fickling_result.is_safe,

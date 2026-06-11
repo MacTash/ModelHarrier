@@ -23,6 +23,18 @@ try:
 except ImportError:
     FICKLING_AVAILABLE = False
 
+try:
+    import picklescan.scanner as picklescan_scanner
+    PICKLESCAN_AVAILABLE = True
+except ImportError:
+    PICKLESCAN_AVAILABLE = False
+
+try:
+    import tensortrap
+    TENSORTRAP_AVAILABLE = True
+except ImportError:
+    TENSORTRAP_AVAILABLE = False
+
 from config import (
     DANGEROUS_OPCODES,
     DANGEROUS_MODULES,
@@ -104,6 +116,26 @@ class PeftMatchResult:
 
 
 @dataclass
+class PicklescanResult:
+    """Results from picklescan CVE database scan"""
+    available: bool = True
+    issues: list[dict] = field(default_factory=list)
+    vulnerable: bool = False
+    scan_error: Optional[str] = None
+
+
+@dataclass
+class TensorTrapResult:
+    """Results from TensorTrap model file scan"""
+    available: bool = True
+    is_suspicious: bool = False
+    findings: list[str] = field(default_factory=list)
+    risk_score: float = 0.0
+    model_type: Optional[str] = None
+    scan_error: Optional[str] = None
+
+
+@dataclass
 class TriangulationResult:
     """Combined result from all verification tools"""
     file_hash: str
@@ -117,6 +149,9 @@ class TriangulationResult:
     sandbox_result: SandboxResult = field(default_factory=SandboxResult)
     peft_result: PeftMatchResult = field(default_factory=PeftMatchResult)
     
+    picklescan_result: PicklescanResult = field(default_factory=PicklescanResult)
+    tensortrap_result: TensorTrapResult = field(default_factory=TensorTrapResult)
+
     # Triangulated conclusion
     consensus: Optional[RiskLevel] = None
     is_false_positive: bool = False
@@ -262,6 +297,62 @@ class VerificationEngine:
             
         return result
     
+    def analyze_with_picklescan(self, data: bytes) -> PicklescanResult:
+        """
+        Scan pickle bytes against picklescan CVE database.
+        Detects known malicious pickle patterns like:
+        - GHSA-vvpj-8cmc-gx39 (pkgutil.resolve_name bypass, CVSS 10.0)
+        - GHSA-5x36-vg95-r43c (subprocess.check_output misuse)
+        - General unsafe opcode combinations
+        """
+        result = PicklescanResult()
+
+        if not PICKLESCAN_AVAILABLE:
+            result.available = False
+            return result
+
+        try:
+            scan_result = picklescan_scanner.scan_pickle(data)
+            result.vulnerable = scan_result.vulnerable
+            result.issues = [
+                {
+                    "cve": getattr(issue, "cve", None),
+                    "severity": getattr(issue, "severity", "unknown"),
+                    "description": getattr(issue, "description", str(issue)),
+                    "opcode": getattr(issue, "opcode", None),
+                }
+                for issue in getattr(scan_result, "issues", [])
+            ]
+        except Exception as e:
+            result.scan_error = str(e)
+
+        return result
+
+    def analyze_with_tensortrap(self, data: bytes) -> TensorTrapResult:
+        """
+        Scan bytes for PyTorch / TensorFlow / Keras / JAX model indicators.
+        TensorTrap checks for suspicious __reduce__ usage, unsafe globals,
+        and known model-bug patterns in serialized ML frameworks.
+        """
+        result = TensorTrapResult()
+
+        if not TENSORTRAP_AVAILABLE:
+            result.available = False
+            return result
+
+        try:
+            tt_result = tensortrap.scan_bytes(data)
+            result.is_suspicious = getattr(tt_result, "is_suspicious", False)
+            result.risk_score = getattr(tt_result, "risk_score", 0.0)
+            result.model_type = getattr(tt_result, "model_type", None)
+            result.findings = [
+                str(f) for f in getattr(tt_result, "findings", [])
+            ]
+        except Exception as e:
+            result.scan_error = str(e)
+
+        return result
+
     def analyze_in_sandbox(self, data: bytes) -> SandboxResult:
         """
         Attempt to load pickle in sandbox with blocked imports.
@@ -355,6 +446,8 @@ class VerificationEngine:
         # Run all analyses
         result.pickletools_result = self.analyze_with_pickletools(data)
         result.fickling_result = self.analyze_with_fickling(data)
+        result.picklescan_result = self.analyze_with_picklescan(data)
+        result.tensortrap_result = self.analyze_with_tensortrap(data)
         result.sandbox_result = self.analyze_in_sandbox(data)
         result.peft_result = self.check_peft_signatures(data)
         
@@ -387,6 +480,31 @@ class VerificationEngine:
             safe_signals += 1
             result.reasoning.append("pickletools: No dangerous opcodes detected")
         
+        # Picklescan signals (CVE database scan)
+        ps = result.picklescan_result
+        if ps.available:
+            if ps.vulnerable:
+                risky_signals += 3
+                cves = [i.get("cve") or "unknown" for i in ps.issues[:3]]
+                result.reasoning.append(
+                    f"picklescan: Vulnerable to {len(ps.issues)} issue(s) — {', '.join(cves)}"
+                )
+            else:
+                safe_signals += 1
+                result.reasoning.append("picklescan: No known CVEs detected")
+
+        # TensorTrap signals (ML framework scan)
+        tt = result.tensortrap_result
+        if tt.available:
+            if tt.is_suspicious:
+                risky_signals += 2
+                result.reasoning.append(
+                    f"tensortrap: Suspicious pattern(s) in {tt.model_type or 'unknown model'} — {', '.join(tt.findings[:3])}"
+                )
+            else:
+                safe_signals += 1
+                result.reasoning.append("tensortrap: No suspicious ML patterns detected")
+
         # Fickling signals
         if result.fickling_result.available:
             if not result.fickling_result.is_safe:

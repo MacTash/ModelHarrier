@@ -1,5 +1,6 @@
 import React from 'react';
-import { Home, BarChart2, Clock, Info, Target, X, Activity, Eye } from 'lucide-react';
+import { Home, BarChart2, Clock, Info, Target, X, Activity, Eye, Trash2 } from 'lucide-react';
+import type { ScanHistoryEntry } from '../utils/scanHistory';
 
 export type SidebarTab = 'dashboard' | 'leaderboard' | 'redteam' | 'verification' | 'reviewer' | 'history' | 'about';
 
@@ -9,6 +10,9 @@ interface SidebarProps {
     activeTab: SidebarTab;
     onTabChange: (tab: SidebarTab) => void;
     hasScannedModel: boolean;
+    scanHistory: ScanHistoryEntry[];
+    onHistorySelect: (modelId: string) => void;
+    onClearHistory: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -16,11 +20,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onClose,
     activeTab,
     onTabChange,
-    hasScannedModel
+    hasScannedModel,
+    scanHistory,
+    onHistorySelect,
+    onClearHistory,
 }) => {
     const handleTabClick = (tab: SidebarTab) => {
         onTabChange(tab);
-        onClose();
     };
 
     const getTabClasses = (tab: SidebarTab, disabled = false) => {
@@ -32,7 +38,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     return (
         <div>
-            {/* Sidebar backdrop */}
             {isOpen && (
                 <div
                     className="fixed inset-0 bg-black/40 z-40"
@@ -40,9 +45,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 />
             )}
 
-            {/* Sidebar panel */}
             <aside
-                className={`fixed top-0 left-0 h-full w-64 bg-white dark:bg-gray-900 shadow-lg z-50 transform transition-transform
+                className={`fixed top-0 left-0 h-full w-72 bg-white dark:bg-gray-900 shadow-lg z-50 transform transition-transform flex flex-col
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
             >
                 <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
@@ -55,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
                 </div>
 
-                <nav className="p-4 space-y-2 text-gray-700 dark:text-gray-300">
+                <nav className="p-4 space-y-2 text-gray-700 dark:text-gray-300 overflow-y-auto flex-1">
                     <button
                         onClick={() => handleTabClick('dashboard')}
                         className={getTabClasses('dashboard')}
@@ -78,7 +82,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         )}
                     </button>
 
-                    {/* New Verification Dashboard */}
                     <button
                         onClick={() => handleTabClick('verification')}
                         className={getTabClasses('verification')}
@@ -90,7 +93,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </span>
                     </button>
 
-                    {/* New Reviewer Mode */}
                     <button
                         onClick={() => hasScannedModel && handleTabClick('reviewer')}
                         className={getTabClasses('reviewer', !hasScannedModel)}
@@ -114,14 +116,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
 
                     <button
-                        className={getTabClasses('history', true)}
-                        title="Coming soon"
+                        onClick={() => handleTabClick('history')}
+                        className={getTabClasses('history')}
                     >
                         <Clock className="w-5 h-5" />
                         Scan History
-                        <span className="text-xs bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded ml-auto">
-                            Soon
-                        </span>
+                        {scanHistory.length > 0 && (
+                            <span className="text-xs bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded ml-auto">
+                                {scanHistory.length}
+                            </span>
+                        )}
                     </button>
 
                     <button
@@ -132,6 +136,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         About
                     </button>
                 </nav>
+
+                {activeTab === 'history' && scanHistory.length > 0 && (
+                    <div className="border-t border-gray-200 dark:border-gray-800 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Recent scans</span>
+                            <button
+                                onClick={onClearHistory}
+                                className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
+                            >
+                                <Trash2 className="w-3 h-3" />
+                                Clear
+                            </button>
+                        </div>
+                        <div className="space-y-1 max-h-48 overflow-y-auto">
+                            {scanHistory.map((entry) => (
+                                <button
+                                    key={entry.modelId + entry.timestamp}
+                                    onClick={() => {
+                                        onHistorySelect(entry.modelId);
+                                        onClose();
+                                    }}
+                                    className="w-full text-left p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                                >
+                                    <div className="text-xs font-medium text-gray-900 dark:text-white truncate">
+                                        {entry.modelId}
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                            entry.severity === 'Critical' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                            entry.severity === 'High' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                                            entry.severity === 'Medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                            'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                        }`}>
+                                            {entry.severity}
+                                        </span>
+                                        <span className="text-[10px] text-gray-400">{entry.overallScore}/10</span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </aside>
         </div>
     );

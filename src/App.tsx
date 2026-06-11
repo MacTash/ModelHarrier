@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Shield,
   Search,
@@ -18,6 +18,9 @@ import {
   Menu,
   Target,
   Cpu,
+  Copy,
+  Check,
+  Clock,
 } from "lucide-react";
 import { Sidebar, SidebarTab } from './components/Sidebar';
 import { exportReportAsPDF } from './utils/exportReport';
@@ -26,48 +29,27 @@ import { performStaticAnalysis, StaticAnalysisResult } from './utils/staticAnaly
 import { detectSpaces, getKnownSpace } from './utils/spacesDetector';
 import { VerificationDashboard } from './components/VerificationDashboard';
 import { ReviewerMode, VerificationResult } from './components/ReviewerMode';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { ToastContainer, ToastMessage } from './components/Toast';
+import { addToScanHistory, loadScanHistory, clearScanHistory, ScanHistoryEntry } from './utils/scanHistory';
+import { loadProbeResults, saveProbeResults } from './utils/probePersistence';
 
-// CONSTANTS
 const RISKY_EXTENSIONS = [
-  ".pickle",
-  ".pkl",
-  ".joblib",
-  ".dill",
-  ".exe",
-  ".bin",
-  ".dll",
+  ".pickle", ".pkl", ".joblib", ".dill", ".exe", ".bin", ".dll",
 ];
 const CODE_EXTENSIONS = [".py", ".sh", ".bash", ".js"];
 const SAFE_EXTENSIONS = [
-  ".safetensors",
-  ".onnx",
-  ".tflite",
-  ".json",
-  ".txt",
-  ".md",
+  ".safetensors", ".onnx", ".tflite", ".json", ".txt", ".md",
 ];
 const SENSITIVE_DOMAINS = [
-  "medical",
-  "finance",
-  "biometric",
-  "legal",
-  "surveillance",
+  "medical", "finance", "biometric", "legal", "surveillance",
 ];
 const REDTEAM_KEYWORDS = [
-  "uncensored",
-  "no safety",
-  "jailbreak",
-  "do anything",
-  "bypass restrictions",
-  "no guardrails",
-  "unrestricted",
-  "unfiltered",
-  "no ethics",
-  "no censorship",
-  "no limits",
+  "uncensored", "no safety", "jailbreak", "do anything",
+  "bypass restrictions", "no guardrails", "unrestricted",
+  "unfiltered", "no ethics", "no censorship", "no limits",
 ];
 
-// TYPES
 export interface SecurityIssue {
   level: "Critical" | "High" | "Medium" | "Low" | "Info";
   type: string;
@@ -87,7 +69,7 @@ export interface ReportScores {
   overallScore: number;
 }
 export interface RedTeamInsights {
-  score: number                // static (card text metadata)
+  score: number
   level: "Low" | "Medium" | "High"
   findings: string[]
 }
@@ -109,7 +91,6 @@ export interface Report {
   probeResults?: ProbeResult[];
 }
 
-// SCAN LOGIC
 const performSecurityScan = async (modelId: string): Promise<Report> => {
   try {
     const response = await fetch(
@@ -117,16 +98,13 @@ const performSecurityScan = async (modelId: string): Promise<Report> => {
     );
 
     if (!response.ok) {
-      // Try to get error message from response body
       let errorMessage = `API Error: ${response.statusText || response.status}`;
       try {
         const errorData = await response.json();
         if (errorData.error) {
           errorMessage = errorData.error;
         }
-      } catch {
-        // Response wasn't JSON, use default message
-      }
+      } catch {}
       throw new Error(errorMessage);
     }
 
@@ -212,7 +190,6 @@ const performSecurityScan = async (modelId: string): Promise<Report> => {
     const analyzeRedTeamRisk = (): RedTeamInsights => {
       const findings: string[] = [];
       let score = 0;
-
       const text = (data.cardData?.text || "").toLowerCase();
       const combined = text + " " + tags.join(" ");
 
@@ -248,45 +225,67 @@ const performSecurityScan = async (modelId: string): Promise<Report> => {
   }
 };
 
-// COMPONENTS BELOW
-
 interface HeaderProps {
   isDark: boolean;
   toggleTheme: () => void;
   onMenuClick: () => void;
+  modelId?: string;
 }
 
-const Header: React.FC<HeaderProps> = ({ isDark, toggleTheme, onMenuClick }) => (
-  <header className="flex justify-between items-center py-6 border-b border-gray-200 dark:border-gray-800 mb-8 transition-colors duration-300">
-    <div className="flex items-center gap-3">
-      <div className="bg-blue-600 p-2 rounded-lg">
-        <Shield className="w-6 h-6 text-white" />
-      </div>
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">AI Eye</h1>
-        <p className="text-xs text-gray-500 dark:text-gray-400">Model Security Scanner</p>
-      </div>
-    </div>
-    <div className="flex items-center gap-3">
-      <button
-        onClick={onMenuClick}
-        className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-        title="Menu"
-      >
-        <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-      </button>
-      <button
-        onClick={toggleTheme}
-        className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-        title="Toggle Theme"
-      >
-        {isDark ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-gray-600" />}
-      </button>
-    </div>
-  </header>
-);
+const Header: React.FC<HeaderProps> = ({ isDark, toggleTheme, onMenuClick, modelId }) => {
+  const [copied, setCopied] = useState(false);
 
-// Search bar
+  const handleCopy = async () => {
+    if (modelId) {
+      await navigator.clipboard.writeText(modelId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <header className="flex justify-between items-center py-6 border-b border-gray-200 dark:border-gray-800 mb-8 transition-colors duration-300">
+      <div className="flex items-center gap-3">
+        <div className="bg-blue-600 p-2 rounded-lg">
+          <Shield className="w-6 h-6 text-white" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">AI Eye</h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Model Security Scanner</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        {modelId && (
+          <button
+            onClick={handleCopy}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors text-gray-600 dark:text-gray-300"
+            title="Copy model ID"
+          >
+            {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+            {copied ? "Copied" : "Copy ID"}
+          </button>
+        )}
+        <button
+          onClick={onMenuClick}
+          className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          title="Menu (Ctrl+K)"
+          aria-label="Open menu"
+        >
+          <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+        </button>
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          title="Toggle Theme"
+          aria-label="Toggle theme"
+        >
+          {isDark ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-gray-600" />}
+        </button>
+      </div>
+    </header>
+  );
+};
+
 const SearchBar = ({ onScan, isLoading }: any) => {
   const [input, setInput] = useState("");
   const handleSubmit = (e: any) => {
@@ -305,6 +304,7 @@ const SearchBar = ({ onScan, isLoading }: any) => {
           placeholder="Enter HuggingFace model ID (e.g., 'gpt2', 'bert-base-uncased')"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          aria-label="Model ID"
         />
 
         <button
@@ -326,6 +326,37 @@ const SearchBar = ({ onScan, isLoading }: any) => {
     </form>
   );
 };
+
+const ScanSkeleton = () => (
+  <div className="animate-fade-in-up space-y-6">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        <div className="space-y-3 w-full">
+          <div className="skeleton h-7 w-64 rounded-lg bg-gray-200 dark:bg-gray-700" />
+          <div className="skeleton h-4 w-48 rounded bg-gray-200 dark:bg-gray-700" />
+        </div>
+        <div className="skeleton h-16 w-16 rounded-full bg-gray-200 dark:bg-gray-700" />
+      </div>
+    </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700">
+          <div className="skeleton h-10 w-10 rounded-lg bg-gray-200 dark:bg-gray-700 mb-3" />
+          <div className="skeleton h-3 w-20 rounded bg-gray-200 dark:bg-gray-700 mb-2" />
+          <div className="skeleton h-5 w-16 rounded bg-gray-200 dark:bg-gray-700" />
+        </div>
+      ))}
+    </div>
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+      <div className="skeleton h-5 w-40 rounded bg-gray-200 dark:bg-gray-700 mb-4" />
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="skeleton h-12 w-full rounded-lg bg-gray-200 dark:bg-gray-700" />
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 interface SeverityBadgeProps {
   level: 'Critical' | 'High' | 'Medium' | 'Low' | 'Info';
@@ -355,7 +386,7 @@ interface StatCardProps {
 }
 
 const StatCard: React.FC<StatCardProps> = ({ icon: Icon, label, value, subtext }) => (
-  <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-start gap-4">
+  <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-start gap-4 transition-colors">
     <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
       <Icon className="w-6 h-6 text-gray-600 dark:text-gray-300" />
     </div>
@@ -401,10 +432,6 @@ const SecurityIssueRow: React.FC<SecurityIssueRowProps> = ({ issue }) => {
   );
 };
 
-
-
-
-
 interface ReportDashboardProps {
   report: Report | null;
 }
@@ -414,7 +441,6 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({ report }) => {
 
   return (
     <div id="scan-report" className="animate-fade-in-up space-y-6 pb-20">
-      {/* Top Level Summary */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
           <div>
@@ -464,7 +490,6 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({ report }) => {
         </div>
       </div>
 
-      {/* Grid Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon={FileText}
@@ -492,12 +517,7 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({ report }) => {
         />
       </div>
 
-      {/* Red Team Insights Section */}
-
-
-      {/* Main Content Area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Security Issues */}
         <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
           <div className="p-5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
             <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -523,7 +543,6 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({ report }) => {
           )}
         </div>
 
-        {/* Right Column: File Breakdown */}
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm h-fit">
           <div className="p-5 border-b border-gray-100 dark:border-gray-800">
             <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -532,7 +551,6 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({ report }) => {
             </h3>
           </div>
           <div className="p-4">
-            {/* Risky Files */}
             {report.files.risky.length > 0 && (
               <div className="mb-4">
                 <p className="text-xs font-bold text-red-500 uppercase tracking-wide mb-2">Executables & Pickles</p>
@@ -546,7 +564,6 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({ report }) => {
               </div>
             )}
 
-            {/* Code Files */}
             {report.files.code.length > 0 && (
               <div className="mb-4">
                 <p className="text-xs font-bold text-yellow-500 uppercase tracking-wide mb-2">Source Code</p>
@@ -560,7 +577,6 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({ report }) => {
               </div>
             )}
 
-            {/* Stats */}
             <div className="space-y-3 mt-4">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">Safetensors/Weights</span>
@@ -578,7 +594,88 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({ report }) => {
   );
 };
 
-// MAIN APP
+function LeaderboardTab({ history }: { history: ScanHistoryEntry[] }) {
+  const sortedByRisk = [...history].sort((a, b) => b.overallScore - a.overallScore);
+  const groups: Record<string, ScanHistoryEntry[]> = {};
+  for (const entry of sortedByRisk) {
+    const key = entry.modelId.split('/')[0] || 'unknown';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(entry);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="text-center mb-8">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center justify-center gap-2">
+          <Target className="w-6 h-6 text-blue-500" />
+          Threat Intel Leaderboard
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          Riskiest models scanned - based on AI Eye heuristic scoring
+        </p>
+      </div>
+
+      {history.length === 0 ? (
+        <div className="text-center py-16">
+          <Target className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No scans yet</h3>
+          <p className="text-gray-500 dark:text-gray-400">Scan models to populate the leaderboard</p>
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-900/50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-10">#</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Score</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Library</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Scanned</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {sortedByRisk.slice(0, 50).map((entry, idx) => (
+                  <tr key={entry.modelId + entry.timestamp} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <td className="px-4 py-3 text-sm text-gray-500">{idx + 1}</td>
+                    <td className="px-4 py-3">
+                      <a
+                        href={`https://huggingface.co/${entry.modelId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {entry.modelId}
+                      </a>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-sm font-bold ${
+                        entry.overallScore >= 8 ? 'text-red-600' :
+                        entry.overallScore >= 5 ? 'text-orange-600' :
+                        entry.overallScore >= 3 ? 'text-yellow-600' : 'text-green-600'
+                      }`}>
+                        {entry.overallScore}/10
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <SeverityBadge level={entry.severity} />
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{entry.library}</td>
+                    <td className="px-4 py-3 text-sm text-gray-400 hidden md:table-cell">
+                      {new Date(entry.timestamp).toLocaleDateString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [isDark, setIsDark] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -588,10 +685,40 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<SidebarTab>('dashboard');
   const [probeResults, setProbeResults] = useState<ProbeResult[]>([]);
   const [verificationResult, _setVerificationResult] = useState<VerificationResult | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [scanHistory, setScanHistory] = useState<ScanHistoryEntry[]>([]);
 
   useEffect(() => {
     if (window.matchMedia("(prefers-color-scheme: dark)").matches)
       setIsDark(true);
+    setScanHistory(loadScanHistory());
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setSidebarOpen(true);
+      }
+      if (e.key === 'Escape' && sidebarOpen) {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    setScanHistory(loadScanHistory());
+  }, []);
+
+  const addToast = useCallback((type: ToastMessage['type'], message: string) => {
+    const id = Date.now().toString();
+    setToasts((prev) => [...prev, { id, type, message }]);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const toggleTheme = () => setIsDark(!isDark);
@@ -606,29 +733,24 @@ export default function App() {
     try {
       const baseReport = await performSecurityScan(id);
 
-      // Perform static analysis
       const staticResult = performStaticAnalysis(
         id,
-        {}, // cardData would come from API
-        [], // tags would come from API
+        {},
+        [],
         undefined,
         undefined
       );
 
-      // Check for Spaces
       let spacesUrl = getKnownSpace(id);
       if (!spacesUrl) {
         try {
           const spacesInfo = await detectSpaces(id);
           spacesUrl = spacesInfo.spacesUrl;
-        } catch {
-          // Spaces detection failed, continue without
-        }
+        } catch {}
       }
       staticResult.spacesUrl = spacesUrl;
       staticResult.hasSpaces = !!spacesUrl;
 
-      // Add static analysis findings to security issues
       for (const finding of staticResult.findings) {
         baseReport.securityIssues.push({
           level: staticResult.staticRiskLevel === 'critical' ? 'Critical' :
@@ -641,220 +763,310 @@ export default function App() {
 
       baseReport.staticAnalysis = staticResult;
       setReport(baseReport);
+      addToScanHistory(baseReport);
+      setScanHistory(loadScanHistory());
+
+      const savedProbes = loadProbeResults(id);
+      if (savedProbes.length > 0) {
+        setProbeResults(savedProbes);
+        baseReport.probeResults = savedProbes;
+      }
+
+      addToast('success', `Scan complete: ${baseReport.modelId}`);
 
     } catch (err: any) {
       setError(err.message || "Scan failed");
+      addToast('error', err.message || "Scan failed");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleHistorySelect = (modelId: string) => {
+    setActiveTab('dashboard');
+    handleScan(modelId);
+  };
+
+  const handleClearHistory = () => {
+    clearScanHistory();
+    setScanHistory([]);
+  };
+
   const handleProbeResultsChange = (results: ProbeResult[]) => {
     setProbeResults(results);
     if (report) {
-      setReport({ ...report, probeResults: results });
+      const updated = { ...report, probeResults: results };
+      setReport(updated);
+      saveProbeResults(report.modelId, results);
     }
   };
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
-      <Sidebar
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        hasScannedModel={!!report}
-      />
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+    <ErrorBoundary>
+      <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
+        <Sidebar
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          hasScannedModel={!!report}
+          scanHistory={scanHistory}
+          onHistorySelect={handleHistorySelect}
+          onClearHistory={handleClearHistory}
+        />
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
 
-        <Header isDark={isDark} toggleTheme={toggleTheme} onMenuClick={() => setSidebarOpen(true)} />
+          <Header isDark={isDark} toggleTheme={toggleTheme} onMenuClick={() => setSidebarOpen(true)} modelId={report?.modelId} />
 
-        <main>
-          {/* Dashboard / Home Tab */}
-          {activeTab === 'dashboard' && (
-            <>
-              <div className="text-center mb-10">
-                <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 dark:text-white mb-4">
-                  Secure your AI Supply Chain
-                </h2>
-                <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto mb-1">
-                  Scan HuggingFace models for malicious code, unsafe serialization (pickles), and license compliance issues before you deploy.
+          <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+          <main>
+            {activeTab === 'dashboard' && (
+              <>
+                {!report && !loading && (
+                  <div className="text-center mb-10">
+                    <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 dark:text-white mb-4">
+                      Secure your AI Supply Chain
+                    </h2>
+                    <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto mb-1">
+                      Scan HuggingFace models for malicious code, unsafe serialization (pickles), and license compliance issues before you deploy.
+                    </p>
+                  </div>
+                )}
+
+                <SearchBar onScan={handleScan} isLoading={loading} />
+
+                <p className="text-center text-sm text-gray-500 dark:text-gray-400 mb-8">
+                  {report ? `Last scan: ${report.modelId}` : '© 2026 AI Eye.'}
                 </p>
-              </div>
 
-              <SearchBar onScan={handleScan} isLoading={loading} />
+                {loading && <ScanSkeleton />}
 
-              <p className="text-center text-sm text-gray-500 dark:text-gray-400 mb-8">
-                © 2025 AI Eye.
-              </p>
-
-              {error && <div className="text-red-500 text-center">{error}</div>}
-              <ReportDashboard report={report} />
-
-              {/* Static Analysis Card - shown when report has static analysis */}
-              {report?.staticAnalysis && (
-                <div className="mt-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="bg-purple-100 dark:bg-purple-900/30 p-2 rounded-lg">
-                      <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 dark:text-white">Deep Static Analysis</h3>
-                      <p className="text-xs text-gray-500">Model card, config, and training data inspection</p>
-                    </div>
-                    <div className="ml-auto">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${report.staticAnalysis.staticRiskLevel === 'critical' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                        report.staticAnalysis.staticRiskLevel === 'high' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
-                          report.staticAnalysis.staticRiskLevel === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                            'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                        }`}>
-                        {report.staticAnalysis.staticRiskLevel.toUpperCase()} ({report.staticAnalysis.staticRiskScore}/100)
-                      </span>
-                    </div>
+                {error && !loading && (
+                  <div className="max-w-lg mx-auto mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-center">
+                    <AlertOctagon className="w-8 h-8 text-red-500 mx-auto mb-2" />
+                    <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
                   </div>
+                )}
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400 block">Base Model</span>
-                      <span className="text-gray-900 dark:text-white font-medium">
-                        {report.staticAnalysis.baseModel || 'Unknown'}
-                      </span>
+                <ReportDashboard report={report} />
+
+                {report?.staticAnalysis && (
+                  <div className="mt-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="bg-purple-100 dark:bg-purple-900/30 p-2 rounded-lg">
+                        <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-gray-900 dark:text-white">Deep Static Analysis</h3>
+                        <p className="text-xs text-gray-500">Model card, config, and training data inspection</p>
+                      </div>
+                      <div className="ml-auto">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${report.staticAnalysis.staticRiskLevel === 'critical' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                          report.staticAnalysis.staticRiskLevel === 'high' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                            report.staticAnalysis.staticRiskLevel === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                              'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          }`}>
+                          {report.staticAnalysis.staticRiskLevel.toUpperCase()} ({report.staticAnalysis.staticRiskScore}/100)
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400 block">Architecture</span>
-                      <span className="text-gray-900 dark:text-white font-medium">
-                        {report.staticAnalysis.architectureType || 'Unknown'}
-                      </span>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400 block">Base Model</span>
+                        <span className="text-gray-900 dark:text-white font-medium">
+                          {report.staticAnalysis.baseModel || 'Unknown'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400 block">Architecture</span>
+                        <span className="text-gray-900 dark:text-white font-medium">
+                          {report.staticAnalysis.architectureType || 'Unknown'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400 block">Unsafe Keywords</span>
+                        <span className={`font-medium ${report.staticAnalysis.unsafeKeywords.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {report.staticAnalysis.unsafeKeywords.length} detected
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400 block">Free Demo</span>
+                        {report.staticAnalysis.hasSpaces ? (
+                          <a
+                            href={report.staticAnalysis.spacesUrl || '#'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 dark:text-blue-400 font-medium hover:underline"
+                          >
+                            Available ↗
+                          </a>
+                        ) : (
+                          <span className="text-gray-500">Not found</span>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400 block">Unsafe Keywords</span>
-                      <span className={`font-medium ${report.staticAnalysis.unsafeKeywords.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {report.staticAnalysis.unsafeKeywords.length} detected
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400 block">Free Demo</span>
-                      {report.staticAnalysis.hasSpaces ? (
-                        <a
-                          href={report.staticAnalysis.spacesUrl || '#'}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 dark:text-blue-400 font-medium hover:underline"
+
+                    {report.staticAnalysis.unsafeKeywords.length > 0 && (
+                      <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                        <span className="text-xs text-red-600 dark:text-red-400 font-bold">Detected Patterns: </span>
+                        <span className="text-xs text-red-600 dark:text-red-400">
+                          {report.staticAnalysis.unsafeKeywords.join(', ')}
+                        </span>
+                      </div>
+                    )}
+
+                    {report.staticAnalysis.hasSpaces && (
+                      <div className="mt-4 flex items-center gap-2">
+                        <Target className="w-4 h-4 text-purple-500" />
+                        <button
+                          onClick={() => setActiveTab('redteam')}
+                          className="text-sm text-purple-600 dark:text-purple-400 font-medium hover:underline"
                         >
-                          Available ↗
-                        </a>
-                      ) : (
-                        <span className="text-gray-500">Not found</span>
-                      )}
+                          Open Red Team Playbook to test this model →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'redteam' && report && (
+              <RedTeamPlaybook
+                modelId={report.modelId}
+                spacesUrl={report.staticAnalysis?.spacesUrl || null}
+                onResultsChange={handleProbeResultsChange}
+                initialResults={probeResults}
+              />
+            )}
+
+            {activeTab === 'about' && (
+              <div className="max-w-2xl mx-auto">
+                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="bg-blue-600 p-3 rounded-lg">
+                      <Shield className="w-8 h-8 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white">AI Eye</h2>
+                      <p className="text-gray-500 dark:text-gray-400">AI Model Security Scanner v1.0</p>
                     </div>
                   </div>
 
-                  {report.staticAnalysis.unsafeKeywords.length > 0 && (
-                    <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                      <span className="text-xs text-red-600 dark:text-red-400 font-bold">Detected Patterns: </span>
-                      <span className="text-xs text-red-600 dark:text-red-400">
-                        {report.staticAnalysis.unsafeKeywords.join(', ')}
-                      </span>
-                    </div>
-                  )}
-
-                  {report.staticAnalysis.hasSpaces && (
-                    <div className="mt-4 flex items-center gap-2">
-                      <Target className="w-4 h-4 text-purple-500" />
-                      <button
-                        onClick={() => setActiveTab('redteam')}
-                        className="text-sm text-purple-600 dark:text-purple-400 font-medium hover:underline"
-                      >
-                        Open Red Team Playbook to test this model →
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Red Team Tab */}
-          {activeTab === 'redteam' && report && (
-            <RedTeamPlaybook
-              modelId={report.modelId}
-              spacesUrl={report.staticAnalysis?.spacesUrl || null}
-              onResultsChange={handleProbeResultsChange}
-              initialResults={probeResults}
-            />
-          )}
-
-          {/* About Tab */}
-          {activeTab === 'about' && (
-            <div className="max-w-2xl mx-auto">
-              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="bg-blue-600 p-3 rounded-lg">
-                    <Shield className="w-8 h-8 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">AI Eye</h2>
-                    <p className="text-gray-500 dark:text-gray-400">AI Model Security Scanner v1.0</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4 text-gray-600 dark:text-gray-300">
-                  <p>
-                    AI Eye helps you secure your AI supply chain by scanning HuggingFace models for:
-                  </p>
-                  <ul className="list-disc list-inside space-y-2 ml-4">
-                    <li>Unsafe serialization formats (pickle, joblib, dill)</li>
-                    <li>Executable files and code that could run on load</li>
-                    <li>License compliance and legal issues</li>
-                    <li>Known vulnerable or uncensored base models</li>
-                    <li>Risky training data sources</li>
-                  </ul>
-
-                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-6">
-                    <h3 className="font-bold text-gray-900 dark:text-white mb-2">Red Team Playbook</h3>
-                    <p className="text-sm">
-                      After scanning a model, use the Red Team Playbook to manually test for jailbreaks,
-                      prompt injection, and other AI safety vulnerabilities. Copy probes and test them
-                      against the model's demo (if available) or your own deployment.
+                  <div className="space-y-4 text-gray-600 dark:text-gray-300">
+                    <p>
+                      AI Eye helps you secure your AI supply chain by scanning HuggingFace models for:
                     </p>
-                  </div>
+                    <ul className="list-disc list-inside space-y-2 ml-4">
+                      <li>Unsafe serialization formats (pickle, joblib, dill)</li>
+                      <li>Executable files and code that could run on load</li>
+                      <li>License compliance and legal issues</li>
+                      <li>Known vulnerable or uncensored base models</li>
+                      <li>Risky training data sources</li>
+                    </ul>
 
-                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                    <p className="text-sm text-gray-500">
-                      Built for AI security research and red teaming. © 2025
-                    </p>
+                    <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-6">
+                      <h3 className="font-bold text-gray-900 dark:text-white mb-2">Keyboard Shortcuts</h3>
+                      <div className="text-sm space-y-1">
+                        <p><kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs font-mono">Ctrl+K</kbd> Open menu</p>
+                        <p><kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs font-mono">Esc</kbd> Close menu</p>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                      <h3 className="font-bold text-gray-900 dark:text-white mb-2">Red Team Playbook</h3>
+                      <p className="text-sm">
+                        After scanning a model, use the Red Team Playbook to manually test for jailbreaks,
+                        prompt injection, and other AI safety vulnerabilities. Copy probes and test them
+                        against the model's demo (if available) or your own deployment.
+                      </p>
+                    </div>
+
+                    <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                      <p className="text-sm text-gray-500">
+                        Built for AI security research and red teaming. © 2026
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Leaderboard Tab (Placeholder) */}
-          {activeTab === 'leaderboard' && (
-            <div className="text-center py-20">
-              <div className="bg-gray-100 dark:bg-gray-800 inline-block p-4 rounded-full mb-4">
-                <Target className="w-12 h-12 text-gray-400" />
+            {activeTab === 'leaderboard' && (
+              <LeaderboardTab history={scanHistory} />
+            )}
+
+            {activeTab === 'verification' && (
+              <VerificationDashboard />
+            )}
+
+            {activeTab === 'reviewer' && (
+              <ReviewerMode
+                result={verificationResult}
+                onClose={() => setActiveTab('dashboard')}
+              />
+            )}
+
+            {activeTab === 'history' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Clock className="w-6 h-6 text-blue-500" />
+                    Scan History
+                  </h2>
+                  {scanHistory.length > 0 && (
+                    <button
+                      onClick={handleClearHistory}
+                      className="text-sm text-red-500 hover:text-red-600"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+                {scanHistory.length === 0 ? (
+                  <div className="text-center py-16">
+                    <Clock className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No scan history</h3>
+                    <p className="text-gray-500 dark:text-gray-400">Scan a model to see it here</p>
+                  </div>
+                ) : (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                      {scanHistory.map((entry) => (
+                        <div
+                          key={entry.modelId + entry.timestamp}
+                          className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <button
+                              onClick={() => handleHistorySelect(entry.modelId)}
+                              className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline truncate block"
+                            >
+                              {entry.modelId}
+                            </button>
+                            <div className="flex items-center gap-2 mt-1">
+                              <SeverityBadge level={entry.severity} />
+                              <span className="text-xs text-gray-400">{entry.overallScore}/10</span>
+                              <span className="text-xs text-gray-400">{entry.library}</span>
+                            </div>
+                          </div>
+                          <div className="text-xs text-gray-400 ml-4 whitespace-nowrap">
+                            {new Date(entry.timestamp).toLocaleDateString(undefined, {
+                              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Threat Intel Leaderboard</h2>
-              <p className="text-gray-500 dark:text-gray-400">Coming soon - Track the riskiest models on HuggingFace</p>
-            </div>
-          )}
-
-          {/* Verification Dashboard Tab */}
-          {activeTab === 'verification' && (
-            <VerificationDashboard />
-          )}
-
-          {/* Reviewer Mode Tab */}
-          {activeTab === 'reviewer' && (
-            <ReviewerMode
-              result={verificationResult}
-              onClose={() => setActiveTab('dashboard')}
-            />
-          )}
-        </main>
+            )}
+          </main>
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }
-
