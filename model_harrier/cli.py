@@ -29,6 +29,11 @@ from model_harrier.db import store
 from model_harrier.data import probes as probe_lib
 from model_harrier.data.vulnerable_models import check_vulnerable_model
 from model_harrier.report.json import generate_json_report, categorize_file
+from model_harrier.scan.coverage import (
+    aggregate_gguf_info as _aggregate_gguf_info,
+    aggregate_safetensors as _aggregate_safetensors,
+    compute_security_confidence as _compute_security_confidence,
+)
 from model_harrier.scan import hf
 from model_harrier.scan.pickles import verify_pickle_file, verify_pickle_bytes
 from model_harrier.scan.static import perform_static_analysis
@@ -395,163 +400,6 @@ def _parse_dependencies(siblings: list[dict], model_id: str) -> dict:
         if dep.startswith("git+"):
             result["git_deps"].append(dep)
     return result
-
-
-def _aggregate_safetensors(file_findings: list[dict], model_info: dict) -> dict:
-    safetensors_filenames = set(f["filename"] for f in file_findings if f["filename"].endswith(".safetensors"))
-    total_tensors = 0
-    metadata_fields: set[str] = set()
-    shard_count = len(safetensors_filenames)
-    anomalies = []
-    suspicious_meta = []
-    for f in file_findings:
-        if f.get("category") != "deep_scan":
-            continue
-        desc = f.get("description", "")
-        if desc.startswith("Tensors:"):
-            import re
-            m = re.search(r'Tensors:\s*(\d+)', desc)
-            if m:
-                total_tensors += int(m.group(1))
-        if desc.startswith("Metadata keys:"):
-            keys_str = desc.split(":", 1)[1].strip()
-            for k in keys_str.split(","):
-                k = k.strip()
-                if k:
-                    metadata_fields.add(k)
-    return {
-        "shard_count": shard_count,
-        "tensor_count": total_tensors or "Not computed (deep scan skipped)",
-        "metadata_fields": sorted(metadata_fields),
-        "anomalies": anomalies,
-        "suspicious_metadata": suspicious_meta,
-    }
-
-
-def _aggregate_gguf_info(file_findings: list[dict]) -> dict:
-    """Aggregate GGUF metadata from deep_scan findings."""
-    meta = {
-        "files": 0,
-        "architecture": set(),
-        "quantization": set(),
-        "context_length": None,
-        "layers": None,
-        "hidden_size": None,
-        "num_heads": None,
-        "parameter_count": None,
-        "tensor_count": 0,
-    }
-    descriptors = {}
-    for f in file_findings:
-        if f.get("category") != "deep_scan":
-            continue
-        desc = f.get("description", "")
-        if desc.startswith("Architecture:"):
-            meta["architecture"].add(desc.split(":", 1)[1].strip())
-        elif desc.startswith("Quantization:"):
-            meta["quantization"].add(desc.split(":", 1)[1].strip())
-        elif desc.startswith("Context Length:"):
-            try:
-                meta["context_length"] = int(desc.split(":", 1)[1].strip())
-            except (ValueError, IndexError):
-                pass
-        elif desc.startswith("Parameters:"):
-            meta["parameter_count"] = desc.split(":", 1)[1].strip()
-        elif desc.startswith("Deep scan skipped"):
-            fn = f["filename"]
-            if fn.endswith(".gguf"):
-                descriptors.setdefault(fn, {})["skipped"] = True
-    for f in file_findings:
-        if f.get("category") == "deep_scan" and f["filename"].endswith(".gguf") and f.get("issue") == "gguf_metadata":
-            meta["files"] += 1
-    return meta
-
-
-def _compute_security_confidence(model_info: dict, file_findings: list[dict]) -> dict:
-    siblings = model_info.get("siblings", [])
-    total_files = len(siblings)
-    total_bytes = 0
-    files_with_size = 0
-    for s in siblings:
-        sz = s.get("size")
-        if sz and sz > 0:
-            total_bytes += sz
-            files_with_size += 1
-
-    deep_by_file: dict[str, list[dict]] = {}
-    for f in file_findings:
-        if f.get("category") == "deep_scan":
-            deep_by_file.setdefault(f["filename"], []).append(f)
-
-    weight_exts = {".safetensors", ".gguf", ".bin", ".pt", ".pth", ".h5", ".hdf5", ".onnx"}
-    deep_scanned_ok = 0
-    deep_scanned_skipped = 0
-    deep_scanned_bytes = 0
-    deep_failed = 0
-    for fn, entries in deep_by_file.items():
-        skipped = any(e.get("issue") in ("scan_size_limit", "scan_size_unknown") for e in entries)
-        failed = any(e.get("issue") == "download_failed" for e in entries)
-        if skipped:
-            deep_scanned_skipped += 1
-        elif failed:
-            deep_failed += 1
-        else:
-            deep_scanned_ok += 1
-            for sib in siblings:
-                if sib.get("rfilename") == fn:
-                    sz = sib.get("size", 0)
-                    if sz and sz > 0:
-                        deep_scanned_bytes += sz
-
-    total_candidates = len(deep_by_file)
-    card_data = model_info.get("cardData")
-    has_card = card_data is not None and bool(card_data)
-    has_config_info = any("config.json" in str(f.get("filename", "")) for f in file_findings)
-
-    metadata_pct = round((files_with_size / max(total_files, 1)) * 100) if total_files > 0 else 0
-    deep_pct = round((deep_scanned_ok / max(total_candidates, 1)) * 100) if total_candidates > 0 else 100
-    byte_pct = round((deep_scanned_bytes / max(total_bytes, 1)) * 100) if total_bytes > 0 else 0
-    model_info_score = 100 if has_card and has_config_info else 50 if has_card or has_config_info else 0
-
-    overall = round(metadata_pct * 0.25 + deep_pct * 0.30 + byte_pct * 0.20 + model_info_score * 0.25)
-    overall = max(0, min(100, overall))
-
-    unscanned = []
-    for fn in deep_by_file:
-        entries = deep_by_file[fn]
-        if any(e.get("issue") in ("scan_size_limit", "scan_size_unknown") for e in entries):
-            sib = next((s for s in siblings if s.get("rfilename") == fn), None)
-            sz = sib.get("size") if sib else None
-            reason = f"File size {sz / 1024 / 1024:.0f} MB exceeds deep-scan threshold" if sz else "File size unknown"
-            unscanned.append({"file": fn, "reason": reason, "category": "deep_skipped"})
-    for fn in deep_by_file:
-        entries = deep_by_file[fn]
-        if any(e.get("issue") == "download_failed" for e in entries):
-            unscanned.append({"file": fn, "reason": "Download failed", "category": "download_failed"})
-
-    weight_files_no_scan = []
-    for s in siblings:
-        fn = s.get("rfilename", "")
-        ext = Path(fn).suffix.lower()
-        if ext in weight_exts and fn not in deep_by_file:
-            weight_files_no_scan.append(fn)
-    for fn in weight_files_no_scan:
-        unscanned.append({"file": fn, "reason": "No deep scan attempted", "category": "not_scanned"})
-
-    for s in siblings:
-        fn = s.get("rfilename", "")
-        if fn not in deep_by_file and fn not in weight_files_no_scan:
-            pass
-
-    return {
-        "confidence_pct": overall,
-        "confidence_level": "HIGH" if overall >= 80 else "MEDIUM" if overall >= 50 else "LOW",
-        "metadata_coverage": {"inspected": files_with_size, "total": total_files, "pct": metadata_pct},
-        "deep_scan_rate": {"scanned": deep_scanned_ok, "skipped": deep_scanned_skipped, "failed": deep_failed, "total": total_candidates, "pct": deep_pct},
-        "byte_coverage": {"inspected": deep_scanned_bytes, "total": total_bytes, "pct": byte_pct},
-        "model_info_completeness": model_info_score,
-        "unscanned": unscanned,
-    }
 
 
 def _analyze_license(license_id: str) -> dict:

@@ -15,6 +15,7 @@
 - Expanded severity regressions into a hand-labeled corpus covering benign text, reputation-only dataset metadata, contextual dataset content/tags, license notices, a configured high-risk source pattern, and tokenizer structure. Removed dataset download-count and verified-organization alerts as reputation-only signals. Corpus label confidence records confidence in the expected category; scanner confidence calibration still needs externally validated samples.
 - Added an optional `format-parsers` dependency group for ONNX and HDF5, with real-parser integration tests for benign and suspicious artifacts. ONNX external weight references are now checked on graph initializers, including traversal paths.
 - Added a push/PR test workflow that installs ONNX and HDF5 parsers. The manual Hugging Face workflow covers metadata, revision-pinned file download, signed-commit, and unsigned-commit cases; its repo input supports public, private, or gated targets, with an optional `HF_TOKEN` secret and bounded HTTP 429 retries.
+- Started the CLI decomposition by moving SafeTensors/GGUF summary aggregation and scan-coverage confidence into `model_harrier.scan.coverage`, with isolated tests for those service functions.
 
 ## Follow-up work
 
@@ -22,4 +23,4 @@
 - Expand ONNX/HDF5 integration coverage with more real-world fixtures and run the optional parser extra in CI.
 - Replace the Hub commit-history page payload with a documented signature API if Hugging Face adds one; keep the current parser fail-closed and maintain its signed/unsigned live checks because the page payload is not a public API contract.
 - Add a controlled private or gated repository fixture and credential-protected CI run when dedicated test credentials are available.
-- Consider splitting the legacy CLI scan/report code into smaller service and presentation modules.
+- Continue extracting report analysis and repository scan orchestration from the CLI, keeping presentation code thin and independently testable.
