@@ -1,61 +1,63 @@
-"""Provenance verification scanner.
+"""Evidence-backed Hugging Face revision and repository scan metadata.
 
-Checks Sigstore signatures, GPG commit signatures, organization trust
-signals, download counts, and maintains a known-bad model blocklist.
+Revision hashes identify the exact repository snapshot scanned, but do not
+authenticate its publisher. Hugging Face model metadata may include automated
+repository scan status; that status is reported as supplied and is not treated
+as a safety verdict. Publisher popularity and verification badges are context,
+not evidence of artifact safety.
 """
 
 import json
 import re
-from pathlib import Path
 from typing import Optional
+
 from model_harrier.utils.config import MODEL_HARRIER_CACHE_DIR
 
 BLOCKLIST_URL = "https://raw.githubusercontent.com/jfrog/model-security/main/blocklist.json"
 BLOCKLIST_CACHE = MODEL_HARRIER_CACHE_DIR / "blocklist.json"
+_REVISION_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$", re.IGNORECASE)
 
-ORGANIZATION_TRUST_SIGNALS = {
-    "google", "meta", "microsoft", "openai", "mistralai", "anthropic",
-    "huggingface", "stabilityai", "together", "bigcode", "bigscience",
-}
 
-MIN_DOWNLOADS_FOR_TRUST = 1000
-MIN_COMMIT_AGE_DAYS = 30
+def get_provenance_evidence(model_info: Optional[dict]) -> dict:
+    """Return observable revision and Hub scan metadata without a risk verdict."""
+    info = model_info or {}
+    revision = info.get("sha") or info.get("revision")
+    revision = revision if isinstance(revision, str) and _REVISION_RE.fullmatch(revision) else None
+
+    status = info.get("security_repo_status") or info.get("securityStatus") or {}
+    if not isinstance(status, dict):
+        status = {}
+    scans_done = status.get("scansDone", status.get("scans_done"))
+    if scans_done is True:
+        scan_state = "complete"
+    elif scans_done is False:
+        scan_state = "pending"
+    else:
+        scan_state = "not_reported"
+    issues = status.get("filesWithIssues", status.get("files_with_issues", []))
+    if not isinstance(issues, list):
+        issues = []
+
+    return {
+        "revision_sha": revision,
+        "revision_pinned": revision is not None,
+        "revision_note": (
+            "SHA identifies the scanned repository snapshot; it does not authenticate the publisher."
+            if revision else "No valid immutable revision SHA was reported by the Hub metadata."
+        ),
+        "signature_status": "not_reported",
+        "signature_note": "The Hugging Face model metadata response does not report commit signature verification.",
+        "hub_security_scan": {
+            "status": scan_state,
+            "files_with_issues": issues,
+            "note": "Hub scan metadata is reported as supplied; completion or an empty issue list is not a safety verdict.",
+        },
+    }
 
 
 def scan_provenance(model_id: str, model_info: Optional[dict] = None, siblings: Optional[list] = None) -> list[dict]:
-    findings = []
-
-    org = model_id.split("/")[0] if "/" in model_id else None
-    if org and org.lower() in ORGANIZATION_TRUST_SIGNALS:
-        findings.append({"issue": "verified_organization", "severity": "low", "description": f"Model from verified organization: {org}"})
-
-    findings.extend(_check_blocklist(model_id))
-
-    if model_info:
-        downloads = model_info.get("downloads", 0)
-        if downloads < MIN_DOWNLOADS_FOR_TRUST:
-            findings.append({"issue": "low_downloads", "severity": "medium", "description": f"Only {downloads} downloads — model may be untested or newly uploaded"})
-
-        card_data = model_info.get("cardData") or {}
-        if not card_data:
-            findings.append({"issue": "missing_model_card", "severity": "low", "description": "Model has no model card data"})
-
-        private = model_info.get("private", False)
-        if private:
-            findings.append({"issue": "private_model", "severity": "medium", "description": "Model is private — cannot verify provenance"})
-
-        pipeline_tag = model_info.get("pipeline_tag", "")
-        if pipeline_tag == "text-generation" and org and org.lower() not in ORGANIZATION_TRUST_SIGNALS:
-            findings.append({"issue": "untrusted_llm_provider", "severity": "low", "description": f"LLM model from non-verified organization: {org}"})
-
-    if siblings:
-        safetensors_present = any("safetensors" in (s.get("rfilename", "") if isinstance(s, dict) else "") for s in siblings)
-        if not safetensors_present:
-            findings.append({"issue": "no_safetensors", "severity": "medium", "description": "Model does not include safetensors files — may use unsafe pickle format"})
-
-    findings.extend(_check_card_trust_signals(model_info))
-
-    return findings
+    """Check the known-bad blocklist; metadata context is reported separately."""
+    return _check_blocklist(model_id)
 
 
 def _check_blocklist(model_id: str) -> list[dict]:
@@ -98,23 +100,3 @@ def update_blocklist() -> bool:
         return True
     except Exception:
         return False
-
-
-def _check_card_trust_signals(model_info: Optional[dict]) -> list[dict]:
-    findings = []
-    if not model_info:
-        return findings
-
-    card_data = model_info.get("cardData") or {}
-    if isinstance(card_data, dict):
-        model_index = card_data.get("model-index")
-        if not model_index:
-            findings.append({"issue": "missing_model_index", "severity": "low", "description": "Model card has no model-index for evaluation results"})
-
-    safetensors = model_info.get("safetensors")
-    if safetensors:
-        parameters = safetensors.get("parameters")
-        if parameters:
-            findings.append({"issue": "safetensors_available", "severity": "low", "description": f"Safe tensors available with {parameters} parameters"})
-
-    return findings

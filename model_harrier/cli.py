@@ -637,7 +637,7 @@ def _assess_behavioral_risk(model_id: str, readme: Optional[str], card_data: Opt
     return {"findings": [], "severity": "safe", "alert_generated": False}
 
 
-def _compute_risk_categories(static_analysis: dict, file_findings: list, alerts: list, trust_remote: dict, behavioral: dict, license_info: dict, publisher_verified: bool) -> dict:
+def _compute_risk_categories(static_analysis: dict, file_findings: list, alerts: list, trust_remote: dict, behavioral: dict, license_info: dict) -> dict:
     exec_score = 0.0
     supply_score = 0.0
     behavior_score = 0.0
@@ -655,8 +655,6 @@ def _compute_risk_categories(static_analysis: dict, file_findings: list, alerts:
         rm = static_analysis["base_model_risk"].get("risk", "")
         supply_score += {"critical": 6.0, "high": 5.0, "medium": 3.0, "low": 1.0}.get(rm, 0)
     supply_score += min(4.0, len(static_analysis.get("risky_dataset_flags", [])) * 2.0)
-    if not publisher_verified:
-        supply_score += 3.0
     if static_analysis.get("unsafe_keywords"):
         supply_score += min(3.0, len(static_analysis["unsafe_keywords"]) * 0.5)
 
@@ -790,7 +788,7 @@ def _publisher_analysis(model_id: str, model_info: dict, tags: list[str], readme
     if model_info.get("author"):
         signals.append(("✓", "Author field present"))
     if model_info.get("downloads", 0) > 1000:
-        signals.append(("✓", f"Published {model_info.get('downloads', 0):,} downloads across models"))
+        signals.append(("i", f"Repository download count: {model_info.get('downloads', 0):,} (popularity context only)"))
     if tags:
         if any("verified" in t.lower() for t in tags):
             signals.append(("✓", "Hugging Face verified organization"))
@@ -803,11 +801,12 @@ def _publisher_analysis(model_id: str, model_info: dict, tags: list[str], readme
     model_count = len({s.get("rfilename", "").split("/")[0] for s in siblings if "/" in s.get("rfilename", "")})
     if model_count > 0:
         signals.append(("✓", f"Organized repository structure"))
-    risk_contribution = 10 if not any("verified" in str(t).lower() for t in (tags or [])) else 0
+    verified = any("verified" in str(t).lower() for t in (tags or []))
     return {
         "signals": signals,
-        "risk_contribution": risk_contribution,
-        "explanation": "Publisher lacks platform-level verification" if risk_contribution > 0 else "Publisher is verified on Hugging Face",
+        "verified": verified,
+        "risk_contribution": 0,
+        "explanation": "Publisher identity, verification badges, and popularity are context only; they do not establish model safety.",
     }
 
 
@@ -854,7 +853,7 @@ def _scan_hf_model(model_id: str, output: Optional[Path], json_output: bool, fai
             console.print(f"  [{color}]•[/] {f['filename']} — {f['description']}")
 
     from model_harrier.scan.formats import scan_file
-    from model_harrier.scan.formats.provenance import scan_provenance as scan_provenance_check
+    from model_harrier.scan.formats.provenance import get_provenance_evidence, scan_provenance as scan_provenance_check
 
     if scannable_files:
         from model_harrier.scan import hf as hf_client
@@ -1010,11 +1009,8 @@ def _scan_hf_model(model_id: str, output: Optional[Path], json_output: bool, fai
     behavioral_risk = _assess_behavioral_risk(model_id, readme_content, card_data, tags)
 
     # --- Risk Categories ---
-    if tags and any("verified" in tag.lower() for tag in tags):
-        publisher_verified = True
-    else:
-        publisher_verified = False
-    risk_categories = _compute_risk_categories(static_analysis, file_findings, alerts, trust_remote, behavioral_risk, license_info, publisher_verified)
+    publisher_verified = bool(tags and any("verified" in tag.lower() for tag in tags))
+    risk_categories = _compute_risk_categories(static_analysis, file_findings, alerts, trust_remote, behavioral_risk, license_info)
 
     # --- Model Card Intelligence ---
     card_intel = _extract_model_card_intelligence(readme_content, card_data, tags)
@@ -1029,6 +1025,7 @@ def _scan_hf_model(model_id: str, output: Optional[Path], json_output: bool, fai
     deep_results = [item for item in file_findings if item.get("category") == "deep_scan"]
     scan_coverage = {
         "revision": model_info.get("sha"),
+        "provenance": get_provenance_evidence(model_info),
         "files_listed": len(siblings),
         "deep_scan_findings": len(deep_results),
         "omitted_or_limited": [
@@ -1113,6 +1110,18 @@ def _scan_hf_model(model_id: str, output: Optional[Path], json_output: bool, fai
         if model_info.get("private"):
             c.print("  [red]PRIVATE REPOSITORY[/]")
 
+        # ── Revision and Provenance Evidence ──
+        provenance = scan_coverage["provenance"]
+        section("Revision & Provenance Evidence")
+        kv("Scanned Revision", provenance["revision_sha"] or "Not reported")
+        kv("Revision Pin", "Pinned to immutable snapshot" if provenance["revision_pinned"] else "No valid revision pin reported")
+        kv("Commit Signature", provenance["signature_status"])
+        kv("Signature Note", provenance["signature_note"])
+        hub_scan = provenance["hub_security_scan"]
+        kv("Hub Repository Scan", hub_scan["status"])
+        kv("Hub Reported Files With Issues", len(hub_scan["files_with_issues"]))
+        kv("Evidence Note", hub_scan["note"])
+
         # ── Publisher Analysis ──
         section("Publisher Analysis")
         kv("Publisher", publisher)
@@ -1121,8 +1130,8 @@ def _scan_hf_model(model_id: str, output: Optional[Path], json_output: bool, fai
             c.print("  [dim]Observed Signals:[/]")
             for icon, signal in pub_analysis["signals"]:
                 c.print(f"    {icon} {signal}")
-        c.print(f"  [dim]Risk Contribution:[/] +{pub_analysis['risk_contribution']} Unverified publisher")
-        c.print(f"  [dim]Reason:[/] {pub_analysis['explanation']}")
+        c.print("  [dim]Risk Contribution:[/] 0 (identity context only)")
+        c.print(f"  [dim]Context:[/] {pub_analysis['explanation']}")
         if artifact_type["type"] == "Research Artifact":
             c.print(f"  [dim]Artifact Classification:[/] {artifact_type['type']} (confidence: {artifact_type['confidence']})")
             for ev in artifact_type["evidence"]:
@@ -1148,7 +1157,7 @@ def _scan_hf_model(model_id: str, output: Optional[Path], json_output: bool, fai
         findings_bullets.append(("[red]✗[/]" if has_pickle else "[green]✓[/]") + " " + ("Pickle-capable artifacts detected — avoid unsafe deserialization" if has_pickle else "No pickle-capable artifacts detected"))
         findings_bullets.append(("[red]✗[/]" if has_exec else "[green]✓[/]") + " " + ("Executable payloads detected" if has_exec else "No executable payloads detected"))
         findings_bullets.append(("[green]✓[/]" if uses_safetensors else "[yellow]⚠[/]") + " " + ("SafeTensors file present; see scan coverage for validation status" if uses_safetensors else "No SafeTensors files found — consider safetensors conversion"))
-        findings_bullets.append(("[yellow]⚠[/]" if publisher_unverified else "[green]✓[/]") + " " + ("Publisher is unverified" if publisher_unverified else "Publisher is verified"))
+        findings_bullets.append("[dim]i[/] Publisher verification badge is identity context and does not affect the risk score")
         if has_lineage:
             lineage_type = "distillation" if "distill" in str(static_analysis.get("base_model", "")).lower() else "base model"
             findings_bullets.append(f"[yellow]⚠[/] Model lineage includes {lineage_type}")
@@ -1405,8 +1414,6 @@ def _scan_hf_model(model_id: str, output: Optional[Path], json_output: bool, fai
         pickle_files = [f["filename"] for f in file_findings if f.get("category") == "risky"]
         non_st_weight_files = [f["filename"] for f in file_findings if f.get("category") in ("binary", "hdf5", "keras") and not f["filename"].endswith(".safetensors")]
 
-        if publisher_unverified:
-            risk_breakdown.append(("+10", f"Unverified publisher: {publisher}", "red"))
         if pickle_files:
             risk_breakdown.append(("+10", f"Pickle artifacts: {', '.join(pickle_files[:5])}{'...' if len(pickle_files) > 5 else ''}", "red"))
         if trust_remote["requires"]:
