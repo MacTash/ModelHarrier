@@ -26,6 +26,8 @@ ZIP and TAR members are checked for normalized path traversal, absolute paths, s
 
 Repository scanning examines all paths returned by the Hub, including nested paths; model configuration fields such as `auto_map` and `trust_remote_code`; Python source using AST-aware checks; dependency declarations; tokenizer and template files; and model-card claims. Hugging Face documents that pickle deserialization may execute code and that its own pickle scanner highlights imports, while also warning that scanners are best-effort. The report therefore keeps source findings distinct from repository reputation signals.
 
+Tokenizer vocabulary and added-token strings are data, not executable code; words such as `subprocess` inside a vocabulary do not create code-execution findings. Dataset license, topic tags, and content descriptions are reported as compliance or scope context, not as evidence that a model artifact is malicious. Explicit high-risk dataset-source patterns remain separate findings.
+
 ### Runtime behavior
 
 Static analysis cannot establish that a model is behaviorally safe or rule out backdoors encoded in weights. The optional Garak integration runs probes only when the configured integration can access the target model. Its results describe the tested probes and outputs, not complete behavioral coverage. Never load untrusted custom model code just to test it; use an isolated environment with restricted network and credentials.

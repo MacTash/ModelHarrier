@@ -83,3 +83,12 @@ def test_relative_path_token_fragment_is_not_a_tokenizer_vulnerability() -> None
     tokenizer = {"model": {"type": "BPE", "vocab": {"../": 1}}, "added_tokens": []}
     issues = scan_tokenizer(json.dumps(tokenizer).encode())
     assert "suspicious_string_in_tokenizer" not in {item["issue"] for item in issues}
+
+
+def test_code_words_in_tokenizer_vocabulary_are_not_execution_findings() -> None:
+    tokenizer = {
+        "model": {"type": "BPE", "vocab": {"subprocess": 1, "os.system": 2, "exec(": 3}},
+        "added_tokens": [{"id": 4, "content": "__import__"}],
+    }
+    issues = scan_tokenizer(json.dumps(tokenizer).encode())
+    assert not [item for item in issues if item["severity"] in ("high", "critical")]

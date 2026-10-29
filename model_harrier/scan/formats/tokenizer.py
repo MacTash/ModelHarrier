@@ -9,9 +9,6 @@ import json
 
 MAX_TOKENIZER_FILE_SIZE = 500 * 1024 * 1024
 MAX_VOCAB_SIZE = 1_000_000
-SUSPICIOUS_TOKEN_PATTERNS = [
-    "eval(", "exec(", "__import__", "os.system", "subprocess",
-]
 
 LARGE_TOKEN_THRESHOLD = 1000
 
@@ -37,7 +34,6 @@ def scan_tokenizer(data: bytes) -> list[dict]:
     findings.extend(_check_added_tokens(tokenizer))
     findings.extend(_check_merges(tokenizer))
     findings.extend(_check_model_config(tokenizer))
-    findings.extend(_scan_suspicious_strings(data))
 
     return findings
 
@@ -79,10 +75,6 @@ def _check_added_tokens(tokenizer: dict) -> list[dict]:
             if len(content) > LARGE_TOKEN_THRESHOLD:
                 findings.append({"issue": "abnormally_large_token", "severity": "medium", "description": f"Added token at index {i} has {len(content)} characters"})
 
-            for pattern in SUSPICIOUS_TOKEN_PATTERNS:
-                if pattern in content.lower():
-                    findings.append({"issue": "suspicious_token_content", "severity": "critical", "description": f"Added token '{content[:50]}' contains suspicious pattern '{pattern}'"})
-
     return findings
 
 
@@ -122,14 +114,4 @@ def _check_model_config(tokenizer: dict) -> list[dict]:
     if unk_token is None:
         findings.append({"issue": "missing_unk_token", "severity": "low", "description": "Tokenizer missing unk_token"})
 
-    return findings
-
-
-def _scan_suspicious_strings(data: bytes) -> list[dict]:
-    findings = []
-    decoded = data.decode("utf-8", errors="replace")
-    for pattern in SUSPICIOUS_TOKEN_PATTERNS:
-        if pattern in decoded.lower():
-            findings.append({"issue": "suspicious_string_in_tokenizer", "severity": "critical", "description": f"Suspicious pattern '{pattern}' found in tokenizer file"})
-            break
     return findings

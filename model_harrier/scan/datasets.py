@@ -20,7 +20,7 @@ CACHE_DIR = MODEL_HARRIER_CACHE_DIR / "datasets"
 
 api = HfApi()
 
-UNSAFE_DATASET_CONTENT_KEYWORDS = [
+SENSITIVE_DATASET_CONTENT_KEYWORDS = [
     "nsfw", "explicit", "adult", "porn", "sexual", "erotica",
     "gore", "violence", "hate", "harassment", "self-harm",
     "jailbreak", "injection", "malware", "exploit", "ransomware",
@@ -31,7 +31,7 @@ UNSAFE_DATASET_CONTENT_KEYWORDS = [
 SUSPICIOUS_DATASET_TAGS = {
     "nsfw", "explicit", "not-safe-for-work", "adult-content",
     "jailbreak", "red-team", "hacking", "malware",
-    "do-not-train-on", "license:unknown", "license:other",
+    "do-not-train-on",
 }
 
 TRUSTED_DATASET_ORGS = {
@@ -116,10 +116,14 @@ def _analyze_dataset(info: dict) -> list[dict]:
     if org and org.lower() in TRUSTED_DATASET_ORGS:
         alerts.append({"type": "dataset_verified_org", "severity": "low", "description": f"Dataset '{ds_id}' from verified organization '{org}'"})
 
-    tags = [t.lower() for t in info.get("tags", [])]
-    suspicious_tags = [t for t in tags if t in SUSPICIOUS_DATASET_TAGS]
-    if suspicious_tags:
-        alerts.append({"type": "dataset_suspicious_tags", "severity": "high", "description": f"Dataset '{ds_id}' has suspicious tags: {', '.join(suspicious_tags)}"})
+    tags = [t.lower() for t in info.get("tags", []) if isinstance(t, str)]
+    context_tags = [t for t in tags if t in SUSPICIOUS_DATASET_TAGS]
+    if context_tags:
+        alerts.append({
+            "type": "dataset_context_tags",
+            "severity": "low",
+            "description": f"Dataset '{ds_id}' has content or usage context tags: {', '.join(context_tags)}",
+        })
 
     card_data = info.get("card_data")
     if card_data:
@@ -127,12 +131,19 @@ def _analyze_dataset(info: dict) -> list[dict]:
             card_text = json.dumps(card_data, default=str).lower()
         except Exception:
             card_text = str(card_data).lower()
-        for kw in UNSAFE_DATASET_CONTENT_KEYWORDS:
-            if kw in card_text:
-                alerts.append({"type": "dataset_unsafe_content", "severity": "high", "description": f"Dataset '{ds_id}' card mentions potentially unsafe content: '{kw}'"})
+        for kw in SENSITIVE_DATASET_CONTENT_KEYWORDS:
+            term = r"\s+".join(re.escape(part) for part in kw.split())
+            if re.search(rf"(?<!\w){term}(?!\w)", card_text):
+                alerts.append({
+                    "type": "dataset_content_scope",
+                    "severity": "low",
+                    "description": f"Dataset '{ds_id}' card mentions the content-scope term '{kw}'",
+                })
                 break
 
     license_val = info.get("license")
+    if not license_val:
+        license_val = next((tag.split(":", 1)[1] for tag in tags if tag.startswith("license:")), None)
     if not license_val:
         alerts.append({"type": "dataset_no_license", "severity": "medium", "description": f"Dataset '{ds_id}' has no license — unclear usage rights"})
     elif isinstance(license_val, str) and license_val.lower() in ("unknown", "other", "license:unknown", "license:other"):

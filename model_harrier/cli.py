@@ -1423,14 +1423,14 @@ def _scan_hf_model(model_id: str, output: Optional[Path], json_output: bool, fai
             else:
                 risk_breakdown.append(("+5", "No safetensors format used", "yellow"))
         ds_alerts = len([a for a in alerts if a.get("type", "").startswith("dataset")])
-        if ds_alerts:
-            risk_breakdown.append((f"+{ds_alerts * 3}", f"{ds_alerts} dataset risk(s)", "yellow"))
 
         tot_manual = 0
         for pts, desc, clr in risk_breakdown:
             pts_val = int(pts.replace("+", ""))
             tot_manual += pts_val
             c.print(f"  [{clr}]{pts}[/] {desc}")
+        if ds_alerts:
+            c.print(f"  [dim]Dataset review signals: {ds_alerts} content or license note(s); shown separately from model compromise risk[/]")
 
         c.print(f"\n  [bold]Static Risk Score:[/] {summary['static_risk_score']}/100")
         c.print(f"  [bold]Final Risk Score:[/] [{score_color}]{summary['risk_score']}/10[/]")
