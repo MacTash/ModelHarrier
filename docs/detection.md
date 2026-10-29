@@ -20,6 +20,8 @@ Pickle-family artifacts are inspected as opcode streams and cross-checked with o
 
 SafeTensors checks validate the bounded JSON header, tensor entry schema, dtype, shape, relative offsets, overlaps, and whether the declared data range fits the file. SafeTensors avoids pickle-style arbitrary code execution, but its format checks still matter for malformed files and resource exhaustion. GGUF, ONNX, Keras/HDF5, and tokenizer files receive format-specific structural checks. Unsupported formats and optional scanners that are unavailable are shown in coverage details.
 
+Install the `format-parsers` optional dependency group to enable ONNX protobuf and HDF5 attribute parsing. Without it, those scanners fall back to bounded raw-byte checks and report the missing parser.
+
 ### Archives
 
 ZIP and TAR members are checked for normalized path traversal, absolute paths, symlinks or hard links, suspicious nested artifacts, oversized entries, excessive compression ratios, and nested archives within bounded depth and expansion budgets. The scanner reads only bounded member contents and does not extract archives to the filesystem.
@@ -46,5 +48,6 @@ Static analysis cannot establish that a model is behaviorally safe or rule out b
 - [PyTorch: `torch.load` security guidance](https://docs.pytorch.org/docs/stable/generated/torch.load.html)
 - [Hugging Face: SafeTensors format](https://huggingface.co/docs/safetensors/main/en/index)
 - [GGML: GGUF file format specification](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md)
+- [ONNX Python API: loading serialized models](https://onnx.ai/onnx/api/serialization.html)
 - [Promptfoo ModelAudit: static scanner and supported formats](https://github.com/promptfoo/modelaudit)
 - [ModelAudit security model: scanner coverage and limitations](https://github.com/promptfoo/modelaudit/blob/main/docs/user/security-model.md)

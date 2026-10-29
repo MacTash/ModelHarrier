@@ -96,7 +96,7 @@ def test_onnx_accepts_benign_parsed_graph_without_findings(monkeypatch) -> None:
         opset_import=[],
     )
     onnx = ModuleType("onnx")
-    onnx.load_from_bytes = lambda _data: model
+    onnx.load_model_from_string = lambda _data: model
     monkeypatch.setitem(sys.modules, "onnx", onnx)
 
     findings = scan_onnx(b"\x08\x08" + b"\x00" * 14)
@@ -111,7 +111,7 @@ def test_onnx_flags_custom_operator_in_parsed_graph(monkeypatch) -> None:
         opset_import=[],
     )
     onnx = ModuleType("onnx")
-    onnx.load_from_bytes = lambda _data: model
+    onnx.load_model_from_string = lambda _data: model
     monkeypatch.setitem(sys.modules, "onnx", onnx)
 
     findings = scan_onnx(b"\x08\x08" + b"\x00" * 14)
@@ -125,7 +125,7 @@ def test_onnx_reports_parse_failure_for_malformed_model(monkeypatch) -> None:
     def fail_parse(_data: bytes):
         raise ValueError("invalid protobuf")
 
-    onnx.load_from_bytes = fail_parse
+    onnx.load_model_from_string = fail_parse
     monkeypatch.setitem(sys.modules, "onnx", onnx)
 
     findings = scan_onnx(b"\x08\x08" + b"\x00" * 14)

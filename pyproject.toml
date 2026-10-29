@@ -39,6 +39,7 @@ tensortrap = ["tensortrap>=1.2.0"]
 sklearn = ["scikit-learn>=1.6"]
 garak = ["garak>=0.15.1"]
 pdf = ["fpdf2>=2.8"]
+format-parsers = ["onnx>=1.16", "h5py>=3.10"]
 all = [
     "fickling>=0.1.11",
     "tensortrap>=1.2.0",

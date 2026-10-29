@@ -21,7 +21,9 @@ def scan_onnx(data: bytes) -> list[dict]:
         findings.append({"issue": "file_too_small", "severity": "high", "description": "File too small to contain valid ONNX protobuf"})
         return findings
 
-    if data[0:2] != b"\x08\x08" and data[0:2] != b"\x08\x01":
+    # ModelProto begins with field 1 (ir_version), encoded as tag 0x08 and a
+    # varint version. The version changes across ONNX releases.
+    if data[0] != 0x08:
         findings.append({"issue": "not_onnx_format", "severity": "medium", "description": "File does not appear to be a valid ONNX protobuf (missing expected field markers)"})
 
     try:
@@ -32,7 +34,7 @@ def scan_onnx(data: bytes) -> list[dict]:
         return findings
 
     try:
-        model = onnx.load_from_bytes(data)
+        model = onnx.load_model_from_string(data)
     except Exception as e:
         findings.append({"issue": "onnx_parse_error", "severity": "high", "description": f"Failed to parse ONNX model: {e}"})
         return findings
@@ -105,6 +107,19 @@ def _scan_raw_heuristics(data: bytes, findings: list[dict]):
 
 def _find_external_data(graph) -> list[dict]:
     findings = []
+    # Tensor initializers carry ONNX external_data references directly; these
+    # are the normal representation for weights stored outside the protobuf.
+    for initializer in getattr(graph, "initializer", []):
+        for entry in getattr(initializer, "external_data", []):
+            key = getattr(entry, "key", "")
+            value = getattr(entry, "value", "")
+            if "location" in key.lower() or "path" in key.lower():
+                if any(pattern in value for pattern in PATH_TRAVERSAL_PATTERNS):
+                    findings.append({
+                        "issue": "path_traversal_external_data",
+                        "severity": "critical",
+                        "description": f"Path traversal in external data reference: {value}",
+                    })
     if not hasattr(graph, "node"):
         return findings
     for node in graph.node:
