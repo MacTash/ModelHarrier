@@ -14,11 +14,12 @@
 - Added evidence-backed provenance reporting for immutable revision SHAs and Hub repository scan status. Removed download-count, publisher-slug, missing-card, private-repository, and verification-badge heuristics from risk findings and risk scores; retained publisher identity as report context. Commit signature status is explicitly `not_reported` because the Hub model metadata response used by this client does not expose signature verification.
 - Expanded severity regressions into a hand-labeled corpus covering benign text, reputation-only dataset metadata, contextual dataset content/tags, license notices, a configured high-risk source pattern, and tokenizer structure. Removed dataset download-count and verified-organization alerts as reputation-only signals. Corpus label confidence records confidence in the expected category; scanner confidence calibration still needs externally validated samples.
 - Added an optional `format-parsers` dependency group for ONNX and HDF5, with real-parser integration tests for benign and suspicious artifacts. ONNX external weight references are now checked on graph initializers, including traversal paths.
+- Added a manual-only Hugging Face integration workflow and a live public-repository metadata test. The token is optional for the public fixture, and HTTP 429 responses receive bounded `Retry-After`/backoff retries.
 
 ## Follow-up work
 
 - Expand the initial synthetic calibration corpus with externally reviewed benign and malicious model artifacts; add scanner confidence calibration against validated labels.
 - Expand ONNX/HDF5 integration coverage with more real-world fixtures and run the optional parser extra in CI.
 - Integrate an authoritative commit-signature verification source when available; the current Hub model metadata API does not expose GPG verification status, so signed revision verification remains incomplete.
-- Expand Hugging Face integration tests into an opt-in CI job with authentication-aware rate limits.
+- Broaden the opt-in Hub job to cover revision-pinned file downloads and authenticated private/gated access when dedicated test credentials are available.
 - Consider splitting the legacy CLI scan/report code into smaller service and presentation modules.

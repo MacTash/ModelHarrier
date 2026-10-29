@@ -95,3 +95,6 @@ disallow_untyped_calls = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+markers = [
+    "hf_integration: makes a live request to the Hugging Face Hub",
+]

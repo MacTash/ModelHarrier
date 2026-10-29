@@ -105,6 +105,8 @@ make typecheck
 
 Tests use pytest. Ruff and mypy are available through the development dependencies; lint findings are still being worked through as the project transitions from its previous implementation.
 
+The live Hugging Face integration test is excluded from ordinary runs. Run it with `MODEL_HARRIER_RUN_HF_INTEGRATION=1 pytest -m hf_integration`; GitHub Actions also provides a manual-only Hub integration workflow. It tests a public repository without a token; an `HF_TOKEN` repository secret enables an authenticated request.
+
 ## Project name
 
 The project was previously called AI Eye. **ModelHarrier** is the current product, package, and GitHub repository name; `ai-eye` remains as a compatibility command.

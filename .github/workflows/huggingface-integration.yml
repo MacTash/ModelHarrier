@@ -1,0 +1,25 @@
+name: Hugging Face integration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-hub-metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MODEL_HARRIER_RUN_HF_INTEGRATION: "1"
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Check live Hub metadata and revision
+        run: python -m pytest -q -m hf_integration tests/test_hf_integration.py
