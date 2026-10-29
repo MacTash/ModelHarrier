@@ -55,8 +55,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/MacTash/ai-eye"
-Issues = "https://github.com/MacTash/ai-eye/issues"
+Homepage = "https://github.com/MacTash/ModelHarrier"
+Issues = "https://github.com/MacTash/ModelHarrier/issues"
 
 [project.scripts]
 model-harrier = "model_harrier.cli:app"

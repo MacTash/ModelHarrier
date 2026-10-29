@@ -20,8 +20,8 @@ ModelHarrier scans Hugging Face repositories and local model directories for sus
 Requirements: Python 3.12 or newer.
 
 ```bash
-git clone https://github.com/MacTash/ai-eye.git
-cd ai-eye
+git clone https://github.com/MacTash/ModelHarrier.git
+cd ModelHarrier
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
@@ -107,4 +107,4 @@ Tests use pytest. Ruff and mypy are available through the development dependenci
 
 ## Project name
 
-The project was previously called AI Eye. **ModelHarrier** is the current product and package name; `ai-eye` remains as a compatibility command and in the existing GitHub repository URL.
+The project was previously called AI Eye. **ModelHarrier** is the current product, package, and GitHub repository name; `ai-eye` remains as a compatibility command.
