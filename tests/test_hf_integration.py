@@ -10,6 +10,7 @@ from collections.abc import Callable
 import pytest
 
 from model_harrier.scan import hf
+from model_harrier.scan.formats.provenance import fetch_commit_signature_status
 
 
 def _retry_rate_limited(call: Callable[[], dict], sleep: Callable[[float], None] = time.sleep) -> dict:
@@ -63,3 +64,29 @@ def test_huggingface_public_model_metadata(tmp_path, monkeypatch):
 
     assert re.fullmatch(r"[0-9a-f]{40,64}", info.get("sha", ""), re.IGNORECASE)
     assert info.get("siblings")
+
+
+@pytest.mark.hf_integration
+def test_hub_reports_known_verified_commit_signature():
+    if os.environ.get("MODEL_HARRIER_RUN_HF_INTEGRATION") != "1":
+        pytest.skip("Set MODEL_HARRIER_RUN_HF_INTEGRATION=1 to enable live Hub requests")
+
+    result = fetch_commit_signature_status(
+        "mradermacher/OneDecision-VisionGuard-27B-SFT-GGUF",
+        "e364a87e6174729a6c16b35ae4293b98fb79fe5e",
+    )
+
+    assert result["status"] == "verified"
+
+
+@pytest.mark.hf_integration
+def test_hub_reports_known_unsigned_commit():
+    if os.environ.get("MODEL_HARRIER_RUN_HF_INTEGRATION") != "1":
+        pytest.skip("Set MODEL_HARRIER_RUN_HF_INTEGRATION=1 to enable live Hub requests")
+
+    result = fetch_commit_signature_status(
+        "openai-community/gpt2",
+        "9b865efde13a30c13e0a33e536cf3e4a5a9d71d8",
+    )
+
+    assert result["status"] == "unsigned"

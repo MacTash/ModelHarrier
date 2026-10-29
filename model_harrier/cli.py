@@ -853,7 +853,11 @@ def _scan_hf_model(model_id: str, output: Optional[Path], json_output: bool, fai
             console.print(f"  [{color}]•[/] {f['filename']} — {f['description']}")
 
     from model_harrier.scan.formats import scan_file
-    from model_harrier.scan.formats.provenance import get_provenance_evidence, scan_provenance as scan_provenance_check
+    from model_harrier.scan.formats.provenance import (
+        fetch_commit_signature_status,
+        get_provenance_evidence,
+        scan_provenance as scan_provenance_check,
+    )
 
     if scannable_files:
         from model_harrier.scan import hf as hf_client
@@ -1023,9 +1027,13 @@ def _scan_hf_model(model_id: str, output: Optional[Path], json_output: bool, fai
     gguf_info = _aggregate_gguf_info(file_findings)
     confidence_info = _compute_security_confidence(model_info, file_findings)
     deep_results = [item for item in file_findings if item.get("category") == "deep_scan"]
+    signature_evidence = (
+        fetch_commit_signature_status(model_id, model_info.get("sha", ""), token=hf.HF_TOKEN)
+        if not offline else None
+    )
     scan_coverage = {
         "revision": model_info.get("sha"),
-        "provenance": get_provenance_evidence(model_info),
+        "provenance": get_provenance_evidence(model_info, signature_evidence),
         "files_listed": len(siblings),
         "deep_scan_findings": len(deep_results),
         "omitted_or_limited": [
@@ -1116,6 +1124,7 @@ def _scan_hf_model(model_id: str, output: Optional[Path], json_output: bool, fai
         kv("Scanned Revision", provenance["revision_sha"] or "Not reported")
         kv("Revision Pin", "Pinned to immutable snapshot" if provenance["revision_pinned"] else "No valid revision pin reported")
         kv("Commit Signature", provenance["signature_status"])
+        kv("Signature Evidence Source", provenance["signature_source"] or "Not available")
         kv("Signature Note", provenance["signature_note"])
         hub_scan = provenance["hub_security_scan"]
         kv("Hub Repository Scan", hub_scan["status"])

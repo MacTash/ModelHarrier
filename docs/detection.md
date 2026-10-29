@@ -10,7 +10,9 @@ ModelHarrier treats a model repository as an untrusted software supply-chain inp
 4. **Pin the scanned revision.** Record the Hugging Face commit SHA and use it for metadata and downloads so the scan report identifies the exact repository snapshot.
 5. **Keep evidence separate from trust signals.** Download counts, publisher identity, license, and verification badges provide context; popularity and badges do not affect risk scores or prove that bytes are safe.
 
-The report records the immutable Hugging Face revision SHA and any repository scan status returned by Hub metadata. A SHA identifies the snapshot but does not authenticate its publisher. Hub scan completion and an empty reported issue list are not a safety verdict. The current Hub model metadata response does not expose commit signature verification, so ModelHarrier reports that status as unavailable rather than inferring it from repository identity or popularity.
+The report records the immutable Hugging Face revision SHA and any repository scan status returned by Hub metadata. A SHA identifies the snapshot but does not authenticate its publisher. Hub scan completion and an empty reported issue list are not a safety verdict.
+
+For commit signatures, the documented commits API omits verification state, while the official commit-history page embeds a structured `verified` property for commit rows. ModelHarrier reads that property for the exact scanned SHA and maps recognized Hub results to `verified`, `unverified`, or `unsigned`. This reports the Hub's verification decision; it does not locally re-verify the cryptographic signature. The page payload is not a public API contract, so a request failure, missing commit row, or unknown page structure is reported as `not_reported`. Signature status is evidence context and does not affect the risk score.
 
 ## Detection layers
 
@@ -44,6 +46,7 @@ Static analysis cannot establish that a model is behaviorally safe or rule out b
 - [Hugging Face: Hub security features](https://huggingface.co/docs/hub/security)
 - [Hugging Face: GPG commit signature verification](https://huggingface.co/docs/hub/main/security-gpg)
 - [Hugging Face Hub API: model metadata and security status](https://huggingface.co/docs/huggingface_hub/main/package_reference/hf_api)
+- [Hugging Face Hub API specification](https://huggingface.co/.well-known/openapi.json)
 - [PyTorch: Serialization semantics and `weights_only`](https://docs.pytorch.org/docs/stable/notes/serialization.html)
 - [PyTorch: `torch.load` security guidance](https://docs.pytorch.org/docs/stable/generated/torch.load.html)
 - [Hugging Face: SafeTensors format](https://huggingface.co/docs/safetensors/main/en/index)
