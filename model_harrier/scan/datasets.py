@@ -34,13 +34,6 @@ SUSPICIOUS_DATASET_TAGS = {
     "do-not-train-on",
 }
 
-TRUSTED_DATASET_ORGS = {
-    "openai", "google", "meta", "microsoft", "anthropic",
-    "huggingface", "bigcode", "bigscience", "princeton-nlp",
-    "tiiuae", "codeparrot", "databricks", "cohere",
-}
-
-
 def fetch_dataset_info(dataset_id: str) -> Optional[dict]:
     cache_file = CACHE_DIR / f"{dataset_id.replace('/', '_')}.json"
     if cache_file.exists():
@@ -107,14 +100,6 @@ def _analyze_dataset(info: dict) -> list[dict]:
 
     if info.get("private"):
         alerts.append({"type": "dataset_private", "severity": "medium", "description": f"Dataset '{ds_id}' is private — cannot verify provenance"})
-
-    downloads = info.get("downloads", 0)
-    if downloads < 100:
-        alerts.append({"type": "dataset_low_downloads", "severity": "low", "description": f"Dataset '{ds_id}' has only {downloads} downloads — may be untested or malicious"})
-
-    org = ds_id.split("/")[0] if "/" in ds_id else None
-    if org and org.lower() in TRUSTED_DATASET_ORGS:
-        alerts.append({"type": "dataset_verified_org", "severity": "low", "description": f"Dataset '{ds_id}' from verified organization '{org}'"})
 
     tags = [t.lower() for t in info.get("tags", []) if isinstance(t, str)]
     context_tags = [t for t in tags if t in SUSPICIOUS_DATASET_TAGS]

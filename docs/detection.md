@@ -30,6 +30,8 @@ Repository scanning examines all paths returned by the Hub, including nested pat
 
 Tokenizer vocabulary and added-token strings are data, not executable code; words such as `subprocess` inside a vocabulary do not create code-execution findings. Dataset license, topic tags, and content descriptions are reported as compliance or scope context, not as evidence that a model artifact is malicious. Explicit high-risk dataset-source patterns remain separate findings.
 
+`tests/fixtures/severity_calibration.json` is a small, synthetic regression corpus for benign text, dataset context and license signals, reputation-only metadata, and malformed tokenizer input. Its labels capture expected scanner behavior, not ground-truth maliciousness; the corpus does not yet support statistical confidence calibration.
+
 ### Runtime behavior
 
 Static analysis cannot establish that a model is behaviorally safe or rule out backdoors encoded in weights. The optional Garak integration runs probes only when the configured integration can access the target model. Its results describe the tested probes and outputs, not complete behavioral coverage. Never load untrusted custom model code just to test it; use an isolated environment with restricted network and credentials.

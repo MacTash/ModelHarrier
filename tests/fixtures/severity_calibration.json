@@ -1,0 +1,82 @@
+[
+  {
+    "name": "biology wording is not bio content",
+    "label": "benign",
+    "label_confidence": "high",
+    "scanner": "dataset_metadata",
+    "input": {"id": "research/biology-texts", "downloads": 1000, "license": "cc-by-4.0", "card_data": {"description": "A collection of biology references."}},
+    "expected": []
+  },
+  {
+    "name": "low popularity is context only",
+    "label": "benign",
+    "label_confidence": "high",
+    "scanner": "dataset_metadata",
+    "input": {"id": "new-author/new-dataset", "downloads": 0, "license": "cc-by-4.0"},
+    "expected": []
+  },
+  {
+    "name": "verified publisher badge is context only",
+    "label": "benign",
+    "label_confidence": "high",
+    "scanner": "dataset_metadata",
+    "input": {"id": "google/new-dataset", "downloads": 100000, "tags": ["verified"], "license": "cc-by-4.0"},
+    "expected": []
+  },
+  {
+    "name": "malware topic tag is scope context",
+    "label": "contextual",
+    "label_confidence": "high",
+    "scanner": "dataset_metadata",
+    "input": {"id": "research/malware-detection", "downloads": 1000, "tags": ["malware", "red-team"], "license": "cc-by-4.0"},
+    "expected": [{"type": "dataset_context_tags", "severity": "low"}]
+  },
+  {
+    "name": "explicit research description is scope context",
+    "label": "contextual",
+    "label_confidence": "high",
+    "scanner": "dataset_metadata",
+    "input": {"id": "research/content-examples", "downloads": 1000, "license": "cc-by-4.0", "card_data": {"description": "Includes explicit examples for moderation research."}},
+    "expected": [{"type": "dataset_content_scope", "severity": "low"}]
+  },
+  {
+    "name": "unknown license is a compliance notice",
+    "label": "compliance",
+    "label_confidence": "high",
+    "scanner": "dataset_metadata",
+    "input": {"id": "research/example", "downloads": 1000, "tags": ["license:unknown"]},
+    "expected": [{"type": "dataset_unknown_license", "severity": "medium"}]
+  },
+  {
+    "name": "missing license is a compliance notice",
+    "label": "compliance",
+    "label_confidence": "high",
+    "scanner": "dataset_metadata",
+    "input": {"id": "research/unlicensed", "downloads": 1000},
+    "expected": [{"type": "dataset_no_license", "severity": "medium"}]
+  },
+  {
+    "name": "configured high-risk dataset source pattern is retained",
+    "label": "pattern_match",
+    "label_confidence": "medium",
+    "scanner": "dataset_source",
+    "input": {"source": "research/darkweb-corpus"},
+    "expected": [{"risk": "critical"}]
+  },
+  {
+    "name": "executable-looking tokenizer vocabulary text is data",
+    "label": "benign",
+    "label_confidence": "high",
+    "scanner": "tokenizer",
+    "input": {"model": {"type": "BPE", "vocab": {"subprocess": 0}, "merges": []}, "unk_token": "<unk>"},
+    "expected": []
+  },
+  {
+    "name": "malformed tokenizer structure is reported",
+    "label": "malformed_artifact",
+    "label_confidence": "high",
+    "scanner": "tokenizer_raw",
+    "input": "{not-json",
+    "expected": [{"issue": "corrupt_tokenizer_json", "severity": "high"}]
+  }
+]

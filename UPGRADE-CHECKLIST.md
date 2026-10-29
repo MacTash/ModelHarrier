@@ -12,10 +12,11 @@
 - Added calibration regression cases for benign tokenizer and dataset text, license metadata, sensitive-content disclosures, and a known high-risk dataset source.
 - Started structural format coverage for ONNX, HDF5, GGUF, Keras v3 containers, and content-first archive routing. The tests exposed and fixed dropped ZIP scans, incorrect GGUF metadata key/scalar parsing, missed GGUF chat-template inspection, and unbounded gzip decompression in Keras scanning.
 - Added evidence-backed provenance reporting for immutable revision SHAs and Hub repository scan status. Removed download-count, publisher-slug, missing-card, private-repository, and verification-badge heuristics from risk findings and risk scores; retained publisher identity as report context. Commit signature status is explicitly `not_reported` because the Hub model metadata response used by this client does not expose signature verification.
+- Expanded severity regressions into a hand-labeled corpus covering benign text, reputation-only dataset metadata, contextual dataset content/tags, license notices, a configured high-risk source pattern, and tokenizer structure. Removed dataset download-count and verified-organization alerts as reputation-only signals. Corpus label confidence records confidence in the expected category; scanner confidence calibration still needs externally validated samples.
 
 ## Follow-up work
 
-- Expand the focused calibration cases into a labeled corpus of benign and malicious model artifacts; calibrate confidence as well as severity.
+- Expand the initial synthetic calibration corpus with externally reviewed benign and malicious model artifacts; add scanner confidence calibration against validated labels.
 - Expand format coverage with real ONNX/HDF5 parser integration cases and additional model-container fixtures; current ONNX tests exercise scanner behavior without requiring the optional parser dependency.
 - Integrate an authoritative commit-signature verification source when available; the current Hub model metadata API does not expose GPG verification status, so signed revision verification remains incomplete.
 - Expand Hugging Face integration tests into an opt-in CI job with authentication-aware rate limits.
