@@ -61,9 +61,20 @@ def test_huggingface_public_model_metadata(tmp_path, monkeypatch):
     monkeypatch.setattr(hf, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(hf, "HF_TOKEN", os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN"))
     info = _retry_rate_limited(lambda: hf.get_model_info(repo_id, use_cache=False))
+    original_download = hf.api.hf_hub_download
+    download_args = {}
+
+    def capture_download(**kwargs):
+        download_args.update(kwargs)
+        return original_download(**kwargs)
+
+    monkeypatch.setattr(hf.api, "hf_hub_download", capture_download)
+    downloaded = _retry_rate_limited(lambda: hf.download_file(repo_id, "config.json"))
 
     assert re.fullmatch(r"[0-9a-f]{40,64}", info.get("sha", ""), re.IGNORECASE)
     assert info.get("siblings")
+    assert downloaded.is_file()
+    assert download_args["revision"] == info["sha"]
 
 
 @pytest.mark.hf_integration

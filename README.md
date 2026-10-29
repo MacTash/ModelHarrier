@@ -105,7 +105,7 @@ make typecheck
 
 Tests use pytest. Ruff and mypy are available through the development dependencies; lint findings are still being worked through as the project transitions from its previous implementation.
 
-The live Hugging Face integration test is excluded from ordinary runs. Run it with `MODEL_HARRIER_RUN_HF_INTEGRATION=1 pytest -m hf_integration`; GitHub Actions also provides a manual-only Hub integration workflow. It tests a public repository without a token; an `HF_TOKEN` repository secret enables an authenticated request.
+The live Hugging Face integration tests are excluded from ordinary runs. Run them with `MODEL_HARRIER_RUN_HF_INTEGRATION=1 pytest -m hf_integration`; they check metadata, revision-pinned downloads, and signed/unsigned commit status. GitHub Actions provides a manual Hub workflow with a repository ID input. Public models work without a token; setting an `HF_TOKEN` repository secret enables private or gated targets. The regular push/PR workflow installs ONNX and HDF5 so their parser integration tests run in CI.
 
 ## Project name
 

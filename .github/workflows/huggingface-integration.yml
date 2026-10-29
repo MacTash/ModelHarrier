@@ -2,6 +2,12 @@ name: Hugging Face integration
 
 on:
   workflow_dispatch:
+    inputs:
+      repository_id:
+        description: Public, private, or gated Hugging Face model repository to test
+        required: false
+        default: hf-internal-testing/tiny-random-bert
+        type: string
 
 permissions:
   contents: read
@@ -12,6 +18,7 @@ jobs:
     timeout-minutes: 10
     env:
       MODEL_HARRIER_RUN_HF_INTEGRATION: "1"
+      MODEL_HARRIER_HF_TEST_REPO: ${{ inputs.repository_id || 'hf-internal-testing/tiny-random-bert' }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - uses: actions/checkout@v4

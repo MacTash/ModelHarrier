@@ -14,12 +14,12 @@
 - Added evidence-backed provenance reporting for immutable revision SHAs, Hub repository scan status, and the Hub's exact-revision commit-signature status. The documented commits API omits signature status, so the scanner reads the structured commit record embedded in the official commit-history page; unknown markup or failed requests stay `not_reported`. This relays the Hub's verification result and does not locally re-verify the signature. Signature status does not affect risk scores.
 - Expanded severity regressions into a hand-labeled corpus covering benign text, reputation-only dataset metadata, contextual dataset content/tags, license notices, a configured high-risk source pattern, and tokenizer structure. Removed dataset download-count and verified-organization alerts as reputation-only signals. Corpus label confidence records confidence in the expected category; scanner confidence calibration still needs externally validated samples.
 - Added an optional `format-parsers` dependency group for ONNX and HDF5, with real-parser integration tests for benign and suspicious artifacts. ONNX external weight references are now checked on graph initializers, including traversal paths.
-- Added a manual-only Hugging Face integration workflow with live metadata, signed-commit, and unsigned-commit cases. The token is optional for public fixtures, and HTTP 429 responses receive bounded `Retry-After`/backoff retries.
+- Added a push/PR test workflow that installs ONNX and HDF5 parsers. The manual Hugging Face workflow covers metadata, revision-pinned file download, signed-commit, and unsigned-commit cases; its repo input supports public, private, or gated targets, with an optional `HF_TOKEN` secret and bounded HTTP 429 retries.
 
 ## Follow-up work
 
 - Expand the initial synthetic calibration corpus with externally reviewed benign and malicious model artifacts; add scanner confidence calibration against validated labels.
 - Expand ONNX/HDF5 integration coverage with more real-world fixtures and run the optional parser extra in CI.
 - Replace the Hub commit-history page payload with a documented signature API if Hugging Face adds one; keep the current parser fail-closed and maintain its signed/unsigned live checks because the page payload is not a public API contract.
-- Broaden the opt-in Hub job to cover revision-pinned file downloads and authenticated private/gated access when dedicated test credentials are available.
+- Add a controlled private or gated repository fixture and credential-protected CI run when dedicated test credentials are available.
 - Consider splitting the legacy CLI scan/report code into smaller service and presentation modules.
