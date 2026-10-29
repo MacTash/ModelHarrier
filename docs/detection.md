@@ -39,5 +39,6 @@ Static analysis cannot establish that a model is behaviorally safe or rule out b
 - [PyTorch: Serialization semantics and `weights_only`](https://docs.pytorch.org/docs/stable/notes/serialization.html)
 - [PyTorch: `torch.load` security guidance](https://docs.pytorch.org/docs/stable/generated/torch.load.html)
 - [Hugging Face: SafeTensors format](https://huggingface.co/docs/safetensors/main/en/index)
+- [GGML: GGUF file format specification](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md)
 - [Promptfoo ModelAudit: static scanner and supported formats](https://github.com/promptfoo/modelaudit)
 - [ModelAudit security model: scanner coverage and limitations](https://github.com/promptfoo/modelaudit/blob/main/docs/user/security-model.md)

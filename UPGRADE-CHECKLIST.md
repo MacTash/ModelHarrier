@@ -10,11 +10,12 @@
 - Documented the scanner model and its limits in `docs/detection.md`.
 - Started severity calibration from the 100-model run: tokenizer vocabulary strings no longer trigger code-execution findings, dataset content and usage labels are contextual low-severity notices, and unknown licenses remain compliance notices.
 - Added calibration regression cases for benign tokenizer and dataset text, license metadata, sensitive-content disclosures, and a known high-risk dataset source.
+- Started structural format coverage for ONNX, HDF5, GGUF, Keras v3 containers, and content-first archive routing. The tests exposed and fixed dropped ZIP scans, incorrect GGUF metadata key/scalar parsing, missed GGUF chat-template inspection, and unbounded gzip decompression in Keras scanning.
 
 ## Follow-up work
 
 - Expand the focused calibration cases into a labeled corpus of benign and malicious model artifacts; calibrate confidence as well as severity.
-- Add more format scanners only with malformed and benign regression samples, including structural tests for ONNX, Keras, GGUF, and model containers.
+- Expand format coverage with real ONNX/HDF5 parser integration cases and additional model-container fixtures; current ONNX tests exercise scanner behavior without requiring the optional parser dependency.
 - Add signed revision and provenance verification as evidence-backed checks; keep publisher popularity as context only.
 - Expand Hugging Face integration tests into an opt-in CI job with authentication-aware rate limits.
 - Consider splitting the legacy CLI scan/report code into smaller service and presentation modules.

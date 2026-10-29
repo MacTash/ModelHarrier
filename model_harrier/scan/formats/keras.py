@@ -5,7 +5,9 @@ references, and suspicious config entries in model JSON.
 """
 
 import gzip
+import io
 import json
+import zipfile
 
 LAMBDA_LAYER_CLASS = "Lambda"
 SUSPICIOUS_CUSTOM_CLASSES = [
@@ -19,6 +21,8 @@ SUSPICIOUS_CONFIG_KEYS = [
 LAMBDA_FUNCTION_INDICATORS = [
     "function", "lambda", "custom_function", "custom_op",
 ]
+MAX_KERAS_CONFIG_SIZE = 5 * 1024 * 1024
+MAX_KERAS_DECOMPRESSED_SIZE = 50 * 1024 * 1024
 
 
 def scan_keras(data: bytes) -> list[dict]:
@@ -32,14 +36,20 @@ def scan_keras(data: bytes) -> list[dict]:
 
     if is_gzip:
         try:
-            data = gzip.decompress(data)
+            with gzip.GzipFile(fileobj=io.BytesIO(data)) as stream:
+                data = stream.read(MAX_KERAS_DECOMPRESSED_SIZE + 1)
         except Exception:
             findings.append({"issue": "corrupt_gzip", "severity": "medium", "description": "File appears gzip-compressed but failed to decompress"})
             return findings
+        if len(data) > MAX_KERAS_DECOMPRESSED_SIZE:
+            findings.append({"issue": "keras_decompression_limit", "severity": "high", "description": f"Decompressed Keras file exceeds the {MAX_KERAS_DECOMPRESSED_SIZE}-byte scan limit"})
+            return findings
+
+    if not _has_hdf5_signature(data):
+        findings.append({"issue": "invalid_hdf5_signature", "severity": "medium", "description": "File does not contain an HDF5 signature at a valid user-block offset"})
 
     try:
         import h5py
-        import io
         with h5py.File(io.BytesIO(data), "r") as f:
             findings.extend(_scan_h5py_model(f))
         return findings
@@ -56,6 +66,72 @@ def scan_keras(data: bytes) -> list[dict]:
     findings.extend(raw_scan)
 
     return findings
+
+
+def scan_keras_container(data: bytes) -> list[dict]:
+    """Inspect a Keras v3 ZIP container and its serialized model config."""
+    from model_harrier.scan.formats.archive import scan_archive
+
+    findings = scan_archive(data)
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            try:
+                info = archive.getinfo("config.json")
+            except KeyError:
+                findings.append({
+                    "issue": "keras_config_missing",
+                    "severity": "medium",
+                    "description": "Keras model container has no root config.json to inspect",
+                })
+                return findings
+
+            if info.file_size > MAX_KERAS_CONFIG_SIZE:
+                findings.append({
+                    "issue": "keras_config_size_limit",
+                    "severity": "medium",
+                    "description": f"Keras config.json is {info.file_size} bytes; inspection limit is {MAX_KERAS_CONFIG_SIZE}",
+                })
+                return findings
+
+            try:
+                config = json.loads(archive.read(info))
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError, RuntimeError, zipfile.BadZipFile):
+                findings.append({
+                    "issue": "keras_config_parse_error",
+                    "severity": "medium",
+                    "description": "Could not parse config.json in Keras model container",
+                })
+                return findings
+
+            if not isinstance(config, dict):
+                findings.append({
+                    "issue": "keras_config_invalid_structure",
+                    "severity": "medium",
+                    "description": "Keras config.json root is not an object",
+                })
+                return findings
+
+            findings.extend(_check_config(config))
+    except zipfile.BadZipFile:
+        findings.append({
+            "issue": "corrupt_keras_container",
+            "severity": "high",
+            "description": "Keras model container is not a valid ZIP archive",
+        })
+
+    return findings
+
+
+def _has_hdf5_signature(data: bytes) -> bool:
+    signature = b"\x89HDF\r\n\x1a\n"
+    if data.startswith(signature):
+        return True
+    offset = 512
+    while offset + len(signature) <= len(data):
+        if data[offset:offset + len(signature)] == signature:
+            return True
+        offset *= 2
+    return False
 
 
 def _scan_h5py_model(f) -> list[dict]:

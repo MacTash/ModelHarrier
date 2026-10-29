@@ -12,7 +12,10 @@ GGUF_MAGIC = 0x46554747
 SUPPORTED_VERSIONS = {1, 2, 3}
 MAX_TENSOR_COUNT = 1_000_000
 MAX_METADATA_COUNT = 100_000
+MAX_METADATA_KEY_LENGTH = 65_535
 MAX_STRING_LENGTH = 10_000_000
+MAX_ARRAY_ITEMS = 100_000
+MAX_NESTED_ARRAY_DEPTH = 32
 
 SSTI_PATTERNS = [
     "{{",
@@ -75,7 +78,7 @@ FILE_TYPE_MAP = {
     32: "Q4_0_8_8",
 }
 
-GGUF_VALUE_SIZES = [4, 1, 1, 2, 4, 8, 4, 8, 0, 0, 8, 8, 8]
+GGUF_VALUE_SIZES = [1, 1, 2, 2, 4, 4, 4, 1, 0, 0, 8, 8, 8]
 
 
 def scan_gguf(data: bytes) -> list[dict]:
@@ -115,20 +118,23 @@ def scan_gguf(data: bytes) -> list[dict]:
 
     offset = 24
     for i in range(min(metadata_count, MAX_METADATA_COUNT)):
-        if offset + 4 > len(data):
+        if offset + 8 > len(data):
+            findings.append({"issue": "metadata_parse_error", "severity": "high", "description": f"Metadata entry {i} is missing its key length"})
             break
-        key_len = struct.unpack("<I", data[offset:offset + 4])[0]
-        offset += 4
-        if key_len > MAX_STRING_LENGTH or key_len > len(data) - offset:
+        key_len = struct.unpack("<Q", data[offset:offset + 8])[0]
+        offset += 8
+        if key_len > MAX_METADATA_KEY_LENGTH or key_len > len(data) - offset:
             findings.append({"issue": "string_length_overflow", "severity": "critical", "description": f"Metadata key {i} has invalid length {key_len}"})
             break
         key = data[offset:offset + key_len].decode("utf-8", errors="replace")
         offset += key_len
 
         if offset + 4 > len(data):
+            findings.append({"issue": "metadata_parse_error", "severity": "high", "description": f"Metadata entry {i} is missing its value type"})
             break
         value_type = struct.unpack("<I", data[offset:offset + 4])[0]
         offset += 4
+        value_offset = offset
 
         try:
             offset = _skip_value(data, offset, value_type, findings, i)
@@ -137,7 +143,7 @@ def scan_gguf(data: bytes) -> list[dict]:
             break
 
         if key.lower() in ("chat_template", "tokenizer.chat_template", "ggml.chat_template"):
-            chat_template = _extract_string_value(data, offset, value_type)
+            chat_template = _extract_string_value(data, value_offset, value_type)
             if chat_template:
                 ssti = _check_ssti(chat_template)
                 findings.extend(ssti)
@@ -185,11 +191,11 @@ def extract_gguf_metadata(data: bytes) -> dict:
     arch = None
     offset = 24
     for _ in range(min(metadata_count, MAX_METADATA_COUNT)):
-        if offset + 4 > len(data):
+        if offset + 8 > len(data):
             break
-        key_len = struct.unpack("<I", data[offset:offset + 4])[0]
-        offset += 4
-        if key_len > MAX_STRING_LENGTH or key_len > len(data) - offset:
+        key_len = struct.unpack("<Q", data[offset:offset + 8])[0]
+        offset += 8
+        if key_len > MAX_METADATA_KEY_LENGTH or key_len > len(data) - offset:
             break
         key = data[offset:offset + key_len].decode("utf-8", errors="replace")
         offset += key_len
@@ -218,13 +224,13 @@ def extract_gguf_metadata(data: bytes) -> dict:
                 meta["quantization"] = FILE_TYPE_MAP.get(ft, f"Unknown({ft})")
         elif key.endswith(".context_length") and value_type in (GGUF_VALUE_TYPE_UINT32, GGUF_VALUE_TYPE_INT32, GGUF_VALUE_TYPE_UINT64):
             meta["context_length"] = _read_uint(data, offset, value_type)
-        elif key.endswith(".block_count") and value_type == GGUF_VALUE_TYPE_UINT32:
+        elif key.endswith(".block_count") and value_type in (GGUF_VALUE_TYPE_UINT32, GGUF_VALUE_TYPE_UINT64):
             meta["layers"] = _read_uint(data, offset, value_type)
-        elif key.endswith(".embedding_length") and value_type == GGUF_VALUE_TYPE_UINT32:
+        elif key.endswith(".embedding_length") and value_type in (GGUF_VALUE_TYPE_UINT32, GGUF_VALUE_TYPE_UINT64):
             meta["hidden_size"] = _read_uint(data, offset, value_type)
-        elif key.endswith(".attention.head_count") and value_type == GGUF_VALUE_TYPE_UINT32:
+        elif key.endswith(".attention.head_count") and value_type in (GGUF_VALUE_TYPE_UINT32, GGUF_VALUE_TYPE_UINT64):
             meta["num_heads"] = _read_uint(data, offset, value_type)
-        elif key.endswith(".attention.head_count_kv") and value_type == GGUF_VALUE_TYPE_UINT32:
+        elif key.endswith(".attention.head_count_kv") and value_type in (GGUF_VALUE_TYPE_UINT32, GGUF_VALUE_TYPE_UINT64):
             meta["num_kv_heads"] = _read_uint(data, offset, value_type)
         elif key == "tokenizer.ggml.model" and value_type == GGUF_VALUE_TYPE_STRING:
             v = _read_string_value(data, offset)
@@ -270,12 +276,13 @@ def _format_param_count(count: int) -> str:
     return str(count)
 
 
-def _skip_value(data: bytes, offset: int, value_type: int, findings: list[dict], entry_idx: int) -> int:
+def _skip_value(data: bytes, offset: int, value_type: int, findings: list[dict], entry_idx: int, depth: int = 0) -> int:
     GGUF_VALUE_TYPE_STRING = 8
     GGUF_VALUE_TYPE_ARRAY = 9
 
     if value_type == GGUF_VALUE_TYPE_STRING:
-        if offset + 4 > len(data):
+        if offset + 8 > len(data):
+            findings.append({"issue": "truncated_metadata_value", "severity": "high", "description": f"Metadata entry {entry_idx} has a truncated string length"})
             raise struct.error("truncated string length")
         length = struct.unpack("<Q", data[offset:offset + 8])[0]
         offset += 8
@@ -284,20 +291,37 @@ def _skip_value(data: bytes, offset: int, value_type: int, findings: list[dict],
             raise struct.error("string overflow")
         return offset + length
     elif value_type == GGUF_VALUE_TYPE_ARRAY:
+        if depth >= MAX_NESTED_ARRAY_DEPTH:
+            findings.append({"issue": "array_nesting_limit", "severity": "high", "description": f"Metadata entry {entry_idx} exceeds the nested array limit"})
+            raise struct.error("array nesting limit")
         if offset + 4 > len(data):
+            findings.append({"issue": "truncated_metadata_value", "severity": "high", "description": f"Metadata entry {entry_idx} has a truncated array type"})
             raise struct.error("truncated array header")
         array_type = struct.unpack("<I", data[offset:offset + 4])[0]
         offset += 4
         if offset + 8 > len(data):
+            findings.append({"issue": "truncated_metadata_value", "severity": "high", "description": f"Metadata entry {entry_idx} has a truncated array length"})
             raise struct.error("truncated array length")
         array_len = struct.unpack("<Q", data[offset:offset + 8])[0]
         offset += 8
-        for _ in range(min(array_len, 100_000)):
-            offset = _skip_value(data, offset, array_type, findings, entry_idx)
+        if array_len > MAX_ARRAY_ITEMS:
+            findings.append({"issue": "array_item_limit", "severity": "high", "description": f"Metadata entry {entry_idx} has {array_len} array items; limit is {MAX_ARRAY_ITEMS}"})
+            raise struct.error("array item limit")
+        for _ in range(array_len):
+            offset = _skip_value(data, offset, array_type, findings, entry_idx, depth + 1)
         return offset
     elif value_type <= 7:
-        sizes = [4, 1, 1, 2, 4, 8, 4, 8]
-        return offset + sizes[value_type]
+        end = offset + GGUF_VALUE_SIZES[value_type]
+        if end > len(data):
+            findings.append({"issue": "truncated_metadata_value", "severity": "high", "description": f"Metadata entry {entry_idx} has a truncated scalar value"})
+            raise struct.error("truncated scalar value")
+        return end
+    elif value_type in (10, 11, 12):
+        end = offset + 8
+        if end > len(data):
+            findings.append({"issue": "truncated_metadata_value", "severity": "high", "description": f"Metadata entry {entry_idx} has a truncated 64-bit value"})
+            raise struct.error("truncated 64-bit value")
+        return end
     else:
         findings.append({"issue": "unknown_value_type", "severity": "medium", "description": f"Unknown GGUF value type {value_type} in metadata entry {entry_idx}"})
         return offset
@@ -346,11 +370,11 @@ def _extract_alignment(data: bytes) -> Optional[int]:
     metadata_count = struct.unpack("<Q", data[16:24])[0]
     offset = 24
     for _ in range(min(metadata_count, MAX_METADATA_COUNT)):
-        if offset + 4 > len(data):
+        if offset + 8 > len(data):
             break
-        key_len = struct.unpack("<I", data[offset:offset + 4])[0]
-        offset += 4
-        if key_len > len(data) - offset:
+        key_len = struct.unpack("<Q", data[offset:offset + 8])[0]
+        offset += 8
+        if key_len > MAX_METADATA_KEY_LENGTH or key_len > len(data) - offset:
             break
         key = data[offset:offset + key_len].decode("utf-8", errors="replace")
         offset += key_len

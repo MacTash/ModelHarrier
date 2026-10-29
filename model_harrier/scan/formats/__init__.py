@@ -7,6 +7,7 @@ from model_harrier.scan.formats.safetensors import scan_safetensors
 from model_harrier.scan.formats.gguf import scan_gguf
 from model_harrier.scan.formats.onnx import scan_onnx
 from model_harrier.scan.formats.keras import scan_keras
+from model_harrier.scan.formats.keras import scan_keras_container
 from model_harrier.scan.formats.archive import scan_archive
 from model_harrier.scan.formats.tokenizer import scan_tokenizer
 
@@ -33,12 +34,16 @@ SCANNERS = {
 def scan_file(filename: str, data: bytes) -> list[dict]:
     ext = detect_format(filename, data)
     original_ext = _get_extension(filename)
-    archive_extensions = {".zip", ".tar", ".tar.gz", ".tgz", ".gz", ".bz2", ".xz", ".7z"}
+    archive_extensions = {".zip", ".tar", ".tar.gz", ".tgz", ".gz", ".bz2", ".xz", ".7z", ".keras"}
     pickle_extensions = {".pkl", ".pickle", ".dill", ".joblib", ".pt", ".pth", ".ckpt", ".bin"}
     compatible = (ext == "archive" and original_ext in archive_extensions) or (ext == "pickle" and original_ext in pickle_extensions)
     mismatch = ext != original_ext and ext not in ("unknown", "") and not compatible
     scanner = SCANNERS.get(ext)
-    if scanner is None:
+    if ext in (".zip", ".tar", ".tar.gz", ".tgz", ".gz", ".bz2", ".xz", ".7z", "archive"):
+        findings = scan_keras_container(data) if original_ext == ".keras" else scan_archive(data)
+    elif ext == "executable":
+        findings = [{"issue": "executable_content", "severity": "high", "description": "File content has a native executable signature"}]
+    elif scanner is None:
         if ext == "pickle":
             from model_harrier.scan.pickles import verify_pickle_bytes
 
@@ -51,10 +56,6 @@ def scan_file(filename: str, data: bytes) -> list[dict]:
             findings = scan_tokenizer(data)
         else:
             findings = []
-    elif ext in (".zip", ".tar", ".tar.gz", ".tgz", ".gz", ".bz2", ".xz", ".7z", "archive"):
-        findings = scan_archive(data)
-    elif ext == "executable":
-        findings = [{"issue": "executable_content", "severity": "high", "description": "File content has a native executable signature"}]
     else:
         findings = scanner(data)
 

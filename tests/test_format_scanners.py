@@ -74,6 +74,14 @@ def test_content_detection_finds_pickle_with_benign_suffix() -> None:
     assert any(item["issue"] == "content_extension_mismatch" for item in issues)
 
 
+def test_content_first_router_scans_archive_members() -> None:
+    payload = _zip([("../outside.py", b"benign", None)])
+
+    issues = scan_file("renamed.model", payload)
+
+    assert "zip_slip_path_traversal" in {item["issue"] for item in issues}
+
+
 def test_large_weight_skipped_for_budget_is_not_reported_as_tiny() -> None:
     issues = scan_weights(b"", {"file_size": 100_000_000})
     assert "weights_file_too_small" not in {item["issue"] for item in issues}
